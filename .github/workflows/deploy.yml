@@ -12,8 +12,16 @@ jobs:
       - name: Gather the app files
         run: mkdir site && cp _worker.js index.html sw.js manifest.webmanifest icon-192.png icon-512.png site/
       - name: Send to Cloudflare
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy site --project-name=bridgette --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || echo "::error::Token secret is empty"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || echo "::error::Account ID secret is empty"
+          echo "::notice::Account ID length ${#CLOUDFLARE_ACCOUNT_ID}, token length ${#CLOUDFLARE_API_TOKEN}"
+          v=$(curl -s https://api.cloudflare.com/client/v4/user/tokens/verify -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | jq -c '{success, status: .result.status, err: .errors}')
+          echo "::notice::Token check: $v"
+          p=$(curl -s "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/bridgette" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | jq -c '{success, name: .result.name, err: .errors}')
+          echo "::notice::Project check: $p"
+          set -o pipefail
+          npx -y wrangler@3 pages deploy site --project-name=bridgette --branch=main 2>&1 | tee out.txt || { grep -iE "error|✘|denied|auth|not found" out.txt | head -5 | while read -r l; do echo "::error::$l"; done; exit 1; }
