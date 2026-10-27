@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bridgette</title>
+<meta name="theme-color" content="#1b3a5c">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<style>
+  :root { --bg:#0f1e2e; --panel:#16293d; --me:#2f6fae; --her:#1f3a55; --text:#f2f6fa; --muted:#9fb3c8; --accent:#ffb347; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:18px/1.45 system-ui, Segoe UI, Roboto, Arial, sans-serif; }
+  #app { display:flex; flex-direction:column; height:100dvh; max-width:900px; margin:0 auto; }
+  header { display:flex; align-items:center; gap:10px; padding:12px 16px; background:var(--panel); }
+  header img { width:36px; height:36px; border-radius:8px; }
+  header h1 { font-size:22px; margin:0; flex:1; }
+  header button { background:none; border:1px solid #3a5674; color:var(--muted); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; }
+  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:85%; padding:12px 14px; border-radius:14px; white-space:pre-wrap; word-wrap:break-word; }
+  .me { align-self:flex-end; background:var(--me); }
+  .her { align-self:flex-start; background:var(--her); }
+  .her a { color:var(--accent); font-weight:bold; }
+  .meta { font-size:12px; color:var(--muted); margin-top:6px; }
+  .steps { font-size:13px; color:var(--muted); margin-top:6px; }
+  .err { align-self:center; color:#ff9a9a; font-size:15px; }
+  form { display:flex; gap:8px; padding:12px 16px calc(12px + env(safe-area-inset-bottom)); background:var(--panel); }
+  textarea { flex:1; resize:none; border-radius:12px; border:1px solid #3a5674; background:#0f1e2e; color:var(--text); padding:12px; font:inherit; max-height:160px; }
+  .btn { border:none; border-radius:12px; padding:0 16px; font-size:18px; font-weight:bold; cursor:pointer; min-width:56px; }
+  #send { background:var(--accent); color:#222; }
+  #mic { background:#2b4866; color:#fff; }
+  #mic.on { background:#d9534f; }
+  #login { position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; padding:16px; }
+  #login div { background:var(--panel); padding:24px; border-radius:16px; width:100%; max-width:360px; text-align:center; }
+  #login input { width:100%; padding:12px; font:inherit; border-radius:10px; border:1px solid #3a5674; background:#0f1e2e; color:var(--text); margin:12px 0; }
+  .thinking { align-self:flex-start; color:var(--muted); font-style:italic; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <img src="/icon-192.png" alt="">
+    <h1>Bridgette</h1>
+    <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
+    <button id="newChat">New chat</button>
+  </header>
+  <div id="log"></div>
+  <form id="f">
+    <button type="button" class="btn" id="mic" title="Talk">🎤</button>
+    <textarea id="q" rows="2" placeholder="Tap 🎤 to talk (tap again to stop), then press Send…"></textarea>
+    <button class="btn" id="send">Send</button>
+  </form>
+</div>
+<div id="login"><div>
+  <img src="/icon-192.png" alt="" width="72">
+  <h2>Bridgette</h2>
+  <p>Enter your passphrase</p>
+  <input id="pass" type="password" autocomplete="current-password">
+  <button class="btn" id="passGo" style="background:var(--accent);padding:12px 24px">Open</button>
+</div></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+let history = store.get('bridgette.history', []);
+let key = store.get('bridgette.key', '');
+let speak = store.get('bridgette.speak', false);
+
+function linkify(text) {
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // [Open the grant](https://...) becomes a clean clickable button-style link; bare links still work.
+  return esc.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+            .replace(/(^|[^"'>])(https?:\/\/[^\s)\]<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+            .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+            .replace(/^#{1,3} (.+)$/gm, '<b>$1</b>');
+}
+function add(role, text, extra) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role === 'user' ? 'me' : 'her');
+  d.innerHTML = linkify(text);
+  if (extra) d.appendChild(extra);
+  $('log').appendChild(d);
+  $('log').scrollTop = $('log').scrollHeight;
+  return d;
+}
+function render() {
+  $('log').innerHTML = '';
+  if (!history.length) add('assistant', "Hi Freedom. I'm Bridgette. What are we doing today?");
+  for (const m of history) add(m.role, m.content);
+}
+function updateSpeakBtn() { $('speakToggle').textContent = speak ? '🔊 Voice on' : '🔈 Voice off'; }
+
+async function send(text) {
+  if (!text.trim()) return;
+  history.push({ role: 'user', content: text });
+  store.set('bridgette.history', history);
+  add('user', text);
+  const t = document.createElement('div'); t.className = 'thinking'; t.textContent = 'Bridgette is working…';
+  $('log').appendChild(t); $('log').scrollTop = $('log').scrollHeight;
+  $('send').disabled = true;
+  try {
+    const r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridgette-key': key },
+      body: JSON.stringify({ messages: history }) });
+    const j = await r.json();
+    t.remove();
+    if (r.status === 401) { showLogin(); history.pop(); return; }
+    if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; $('log').appendChild(e); history.pop(); store.set('bridgette.history', history); return; }
+    history.push({ role: 'assistant', content: j.reply });
+    store.set('bridgette.history', history);
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = 'brain: ' + j.brain + (j.steps && j.steps.length ? ' · used: ' + j.steps.map(s => s.tool).join(', ') : '');
+    add('assistant', j.reply, meta);
+    if (speak && 'speechSynthesis' in window) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(j.reply.replace(/https?:\/\/\S+/g, 'link'))); }
+  } catch (e) {
+    t.remove();
+    const er = document.createElement('div'); er.className = 'err'; er.textContent = 'Could not reach Bridgette: ' + e.message; $('log').appendChild(er);
+    history.pop(); store.set('bridgette.history', history);
+  } finally { $('send').disabled = false; }
+}
+
+$('f').addEventListener('submit', (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; send(v); });
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
+$('newChat').onclick = () => { history = []; store.set('bridgette.history', history); render(); };
+$('speakToggle').onclick = () => { speak = !speak; store.set('bridgette.speak', speak); updateSpeakBtn(); if (!speak && 'speechSynthesis' in window) speechSynthesis.cancel(); };
+
+// voice input
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+if (SR) {
+  // Keeps listening through pauses until Freedom taps the mic again; never auto-sends.
+  rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
+  let listening = false, before = '';
+  rec.onresult = (e) => { $('q').value = (before + ' ' + Array.from(e.results).map(r => r[0].transcript).join('')).trim(); };
+  rec.onend = () => { if (listening) { before = $('q').value; try { rec.start(); } catch (err) {} } else { $('mic').classList.remove('on'); } };
+  $('mic').onclick = () => {
+    if (listening) { listening = false; rec.stop(); $('mic').classList.remove('on'); $('q').focus(); }
+    else { listening = true; before = $('q').value; $('mic').classList.add('on'); try { rec.start(); } catch (err) {} }
+  };
+} else { $('mic').style.display = 'none'; }
+
+function showLogin() { $('login').style.display = 'flex'; $('pass').focus(); }
+$('passGo').onclick = async () => {
+  key = $('pass').value; store.set('bridgette.key', key);
+  const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } });
+  if (r.ok) { $('login').style.display = 'none'; } else { $('pass').value = ''; $('pass').placeholder = 'Wrong passphrase'; }
+};
+$('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passGo').click(); });
+
+(async () => {
+  updateSpeakBtn(); render();
+  try { const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } }); if (r.status === 401) showLogin(); } catch (e) {}
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>

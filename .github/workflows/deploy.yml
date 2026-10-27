@@ -1,0 +1,19 @@
+# Every change saved here goes live at bridgette.pages.dev on its own.
+name: Deploy Bridgette
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Gather the app files
+        run: mkdir site && cp _worker.js index.html sw.js manifest.webmanifest icon-192.png icon-512.png site/
+      - name: Send to Cloudflare
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=bridgette --branch=main
