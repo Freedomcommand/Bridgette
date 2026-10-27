@@ -17,7 +17,11 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] || echo "::error::Token secret is empty"
-          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || echo "::error::Account ID secret is empty"
+          # Find the account from the token itself if the saved Account ID is missing or wrong
+          if ! [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]; then
+            CLOUDFLARE_ACCOUNT_ID=$(curl -s https://api.cloudflare.com/client/v4/accounts -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | jq -r '.result[0].id // empty')
+            echo "CLOUDFLARE_ACCOUNT_ID=$CLOUDFLARE_ACCOUNT_ID" >> $GITHUB_ENV; export CLOUDFLARE_ACCOUNT_ID
+          fi
           echo "::notice::Account ID length ${#CLOUDFLARE_ACCOUNT_ID}, token length ${#CLOUDFLARE_API_TOKEN}"
           v=$(curl -s https://api.cloudflare.com/client/v4/user/tokens/verify -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | jq -c '{success, status: .result.status, err: .errors}')
           echo "::notice::Token check: $v"
