@@ -42,6 +42,7 @@
   <header>
     <img src="/icon-192.png" alt="">
     <h1>Bridgette</h1>
+    <button id="laptopBtn" title="Let this device use the laptop">💻 Laptop</button>
     <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
     <button id="newChat">New chat</button>
   </header>
@@ -68,6 +69,7 @@ const store = {
 let history = store.get('bridgette.history', []);
 let key = store.get('bridgette.key', '');
 let speak = store.get('bridgette.speak', false);
+let laptopCode = store.get('bridgette.laptopCode', '');
 
 function linkify(text) {
   const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -102,7 +104,7 @@ async function send(text) {
   $('log').appendChild(t); $('log').scrollTop = $('log').scrollHeight;
   $('send').disabled = true;
   try {
-    const r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridgette-key': key },
+    const r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridgette-key': key, 'x-laptop-code': laptopCode },
       body: JSON.stringify({ messages: history }) });
     const j = await r.json();
     t.remove();
@@ -141,6 +143,25 @@ if (SR) {
   };
 } else { $('mic').style.display = 'none'; }
 
+// Laptop code: typed once on this device, remembered here.
+async function checkLaptop() {
+  if (!laptopCode) { $('laptopBtn').textContent = '💻 Laptop'; return false; }
+  try {
+    const r = await fetch('/api/status?laptopcode=1', { headers: { 'x-bridgette-key': key, 'x-laptop-code': laptopCode } });
+    const j = await r.json();
+    $('laptopBtn').textContent = j.codeOk ? '💻 Laptop ✔' : '💻 Laptop';
+    return !!j.codeOk;
+  } catch (e) { return false; }
+}
+$('laptopBtn').onclick = async () => {
+  const c = prompt('Type the laptop code (from the Bridgette Link setup). Leave empty to turn laptop access off on this device.', '');
+  if (c === null) return;
+  laptopCode = c.trim(); store.set('bridgette.laptopCode', laptopCode);
+  if (!laptopCode) { $('laptopBtn').textContent = '💻 Laptop'; return; }
+  const ok = await checkLaptop();
+  add('assistant', ok ? 'Laptop code saved on this device. I can work on your laptop now.' : 'That laptop code did not match. Tap 💻 Laptop and try again.');
+};
+
 function showLogin() { $('login').style.display = 'flex'; $('pass').focus(); }
 $('passGo').onclick = async () => {
   key = $('pass').value; store.set('bridgette.key', key);
@@ -150,7 +171,7 @@ $('passGo').onclick = async () => {
 $('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passGo').click(); });
 
 (async () => {
-  updateSpeakBtn(); render();
+  updateSpeakBtn(); render(); checkLaptop();
   try { const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } }); if (r.status === 401) showLogin(); } catch (e) {}
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();

@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Gather the app files
-        run: mkdir site && cp _worker.js index.html sw.js manifest.webmanifest icon-192.png icon-512.png site/
+        run: mkdir site && cp _worker.js index.html sw.js manifest.webmanifest icon-192.png icon-512.png site/ && cp -r laptop site/
       - name: Send to Cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

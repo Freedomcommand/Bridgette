@@ -20,7 +20,7 @@ const DEFAULT_BRAINS = [
     url: 'https://openrouter.ai/api/v1/chat/completions' },
 ];
 
-const MAX_STEPS = 8;
+const MAX_STEPS = 15;
 const TZ_DEFAULT = 'America/Chicago'; // Houston
 
 function systemPrompt(env, memory) {
@@ -37,6 +37,13 @@ How you work:
 - When he asks you to save something you already wrote earlier in the chat, copy that full text into save_file; do not shorten it.
 - For a house or room design, use draw_floor_plan first (the skeleton blueprint), then describe it.
 - When he tells you something worth keeping about him or his work, use remember.
+
+Working on Freedom's laptop (Windows):
+- You can work on his laptop directly with laptop_run (PowerShell commands), laptop_read (open a file or list a folder) and laptop_write (make or change a file). Use them whenever he asks you to do something on his computer: find, open, make, move, rename, organize, clean up, check space, install, run programs.
+- Do the work yourself, step by step, and look at each result before the next step. Do not tell him to do it himself if you can do it.
+- ALWAYS ask Freedom first and wait for his "yes" before you delete anything, uninstall anything, empty the Recycle Bin, change system settings, or run anything you are not sure is safe. Tell him exactly what will be removed or changed. When deleting files, send them to the Recycle Bin when you can, so he can get them back.
+- His home folder is %USERPROFILE% (Desktop, Documents, Downloads, Pictures are inside it). Paths starting with ~ mean his home folder.
+- If the laptop does not answer, tell him it is probably off, asleep, or offline.
 
 What you already know about Freedom:
 ${memory || '(nothing saved yet)'}`;
@@ -60,6 +67,13 @@ const TOOLS = [
     parameters: { type: 'object', properties: { name: { type: 'string', description: 'file name without extension' },
       type: { type: 'string', enum: ['doc', 'html', 'svg', 'md', 'txt', 'csv'] }, content: { type: 'string' } }, required: ['name', 'type', 'content'] } } },
   { type: 'function', function: { name: 'list_files', description: 'List files Bridgette has saved.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'laptop_run', description: "Run a PowerShell command on Freedom's Windows laptop and get its output. Use for anything on his computer: searching, moving, renaming, checking disk space, listing programs, starting apps, installing (winget), cleaning up. Ask him first before deleting, uninstalling, or changing settings.",
+    parameters: { type: 'object', properties: { command: { type: 'string', description: 'PowerShell command(s)' },
+      timeout: { type: 'number', description: 'Seconds to allow, default 120, max 600' } }, required: ['command'] } } },
+  { type: 'function', function: { name: 'laptop_read', description: "Open a text file on Freedom's laptop, or list what is in a folder. Paths may start with ~ for his home folder (e.g. ~/Desktop).",
+    parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
+  { type: 'function', function: { name: 'laptop_write', description: "Make or change a text file on Freedom's laptop (creates folders as needed). Set append true to add to the end instead of replacing.",
+    parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, append: { type: 'boolean' } }, required: ['path', 'content'] } } },
   { type: 'function', function: { name: 'draw_floor_plan', description: 'Draw a blueprint-style floor plan. Rooms are rectangles in feet; x,y is the top-left corner. Doors/windows optional.',
     parameters: { type: 'object', properties: {
       title: { type: 'string' },
@@ -236,6 +250,50 @@ async function webSearch(query) {
   return results.length ? { results } : { error: 'No results found. Try different words.' };
 }
 
+// ---------- Freedom's laptop (Bridgette Link) ----------
+// No door is opened into the laptop. The laptop quietly asks Bridgette for work
+// (poll), does it, and sends back the result. Nothing outside can reach the computer.
+async function laptopInfo(env) {
+  if (!env.BRIDGETTE_KV) return null;
+  return await env.BRIDGETTE_KV.get('laptop', 'json');
+}
+
+async function sha256(text) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(text)));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+const cleanCode = (c) => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+// The laptop code is typed once on each of Freedom's devices; without it nobody can make Bridgette touch the laptop.
+async function laptopCodeOk(env, code) {
+  const L = await laptopInfo(env);
+  if (!L) return false;
+  if (env.LAPTOP_CODE) return cleanCode(code) === cleanCode(env.LAPTOP_CODE);
+  return !!L.codeHash && cleanCode(code).length >= 12 && (await sha256(cleanCode(code))) === L.codeHash;
+}
+
+// Bridgette drops a job in the box and waits for the laptop to pick it up and answer.
+async function laptopCall(env, kind, payload, waitSec = 120, ctx = {}) {
+  const L = await laptopInfo(env);
+  if (!L) return { error: 'No laptop is linked yet. Freedom needs to run the Bridgette Link setup on his laptop.' };
+  if (!ctx.laptopOk) return { error: 'This device does not have the laptop code yet. Tell Freedom: tap the 💻 Laptop button at the top of Bridgette and type the laptop code (it was shown when he set up Bridgette Link). Then ask again.' };
+  if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  await env.BRIDGETTE_KV.put('job:' + id, JSON.stringify({ id, kind, payload, created: Date.now() }), { expirationTtl: 300 });
+  const deadline = Date.now() + waitSec * 1000;
+  let waited = false;
+  while (Date.now() < deadline) {
+    await new Promise((res) => setTimeout(res, 1500));
+    const done = await env.BRIDGETTE_KV.get('result:' + id, 'json');
+    if (done) { await env.BRIDGETTE_KV.delete('result:' + id); return done.result; }
+    const stillThere = await env.BRIDGETTE_KV.get('job:' + id);
+    if (stillThere) waited = true; // laptop hasn't grabbed it yet
+  }
+  await env.BRIDGETTE_KV.delete('job:' + id);
+  if (waited) return { error: `The laptop (${L.computer}) is not answering right now — it is probably off, asleep, offline, or Bridgette Link is not running. Try again when it is awake.` };
+  return { error: `The laptop (${L.computer}) picked up the job but did not finish in time (${waitSec}s).` };
+}
+
 // small safe calculator (no eval)
 function calculate(expr) {
   const s = String(expr).replace(/\s+/g, '').replace(/,/g, '').replace(/[x×]/g, '*').replace(/÷/g, '/');
@@ -298,7 +356,7 @@ function floorPlanSvg({ title, rooms = [], doors = [], windows = [] }) {
 ${g}</svg>`;
 }
 
-async function runTool(name, args, env, origin) {
+async function runTool(name, args, env, origin, ctx = {}) {
   try {
     switch (name) {
       case 'get_datetime': {
@@ -330,6 +388,12 @@ async function runTool(name, args, env, origin) {
         const l = await env.BRIDGETTE_KV.list({ prefix: 'file:' });
         return { files: l.keys.map((k) => ({ name: k.name.slice(5), link: `${origin}/files/${k.name.slice(5)}` })) };
       }
+      case 'laptop_run': {
+        const sec = Math.min(Math.max(Number(args.timeout) || 120, 5), 230);
+        return await laptopCall(env, 'run', { command: String(args.command || ''), timeout: sec }, sec + 20, ctx);
+      }
+      case 'laptop_read': return await laptopCall(env, 'read', { path: String(args.path || '') }, 90, ctx);
+      case 'laptop_write': return await laptopCall(env, 'write', { path: String(args.path || ''), content: String(args.content ?? ''), append: !!args.append }, 90, ctx);
       case 'draw_floor_plan': {
         const svg = floorPlanSvg(args);
         return await storeFile(env, origin, args.title || 'floor-plan', 'svg', svg);
@@ -386,7 +450,7 @@ async function askBrains(env, messages, skip) {
   throw new Error(`All my brains are busy or used up right now (${short}). Try again in a minute — adding more free brain keys fixes this.`);
 }
 
-async function chat(env, origin, history) {
+async function chat(env, origin, history, ctx = {}) {
   const memory = await getMemory(env);
   const messages = [{ role: 'system', content: systemPrompt(env, memory) }, ...history.slice(-30)];
   const steps = [];
@@ -401,7 +465,7 @@ async function chat(env, origin, history) {
     for (const c of calls) {
       let args = {};
       try { args = JSON.parse(c.function.arguments || '{}'); } catch (e) { /* keep empty */ }
-      const result = await runTool(c.function.name, args, env, origin);
+      const result = await runTool(c.function.name, args, env, origin, ctx);
       steps.push({ tool: c.function.name, args, result: summarize(result) });
       messages.push({ role: 'tool', tool_call_id: c.id, name: c.function.name, content: JSON.stringify(result).slice(0, 12000) });
     }
@@ -438,7 +502,8 @@ export default {
         const body = await req.json();
         const history = (body.messages || []).filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
           .map((m) => ({ role: m.role, content: m.content }));
-        return json(await chat(env, origin, history));
+        const laptopOk = await laptopCodeOk(env, req.headers.get('x-laptop-code'));
+        return json(await chat(env, origin, history, { laptopOk }));
       } catch (e) {
         return json({ error: String(e.message || e) }, 500);
       }
@@ -446,7 +511,61 @@ export default {
 
     if (url.pathname === '/api/status') {
       if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
-      return json({ brains: brainsFor(env).map((b) => `${b.name} (${b.model})`), storage: !!env.BRIDGETTE_KV, passphrase: !!env.BRIDGETTE_PASSPHRASE });
+      const L = await laptopInfo(env);
+      if (url.searchParams.has('laptopcode')) return json({ laptop: L ? L.computer : null, codeOk: await laptopCodeOk(env, req.headers.get('x-laptop-code')) });
+      return json({ brains: brainsFor(env).map((b) => `${b.name} (${b.model})`), storage: !!env.BRIDGETTE_KV, passphrase: !!env.BRIDGETTE_PASSPHRASE,
+        laptop: L ? L.computer : null });
+    }
+
+    if (url.pathname === '/api/laptop/register' && req.method === 'POST') {
+      // Called by the Bridgette Link setup on the laptop. The first laptop links freely;
+      // after that, only a computer holding the current laptop key can re-link.
+      if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
+      const b = await req.json().catch(() => ({}));
+      if (String(b.key || '').length < 24 || cleanCode(b.code).length < 12) return json({ error: 'Bad link details. Download the newest setup and run it again.' }, 400);
+      const cur = await env.BRIDGETTE_KV.get('laptop', 'json');
+      if (cur && cur.key !== b.key) return json({ error: `A laptop (${cur.computer}) is already linked with a different key. Run setup on that laptop, or remove the "laptop" entry in Bridgette's storage first.` }, 403);
+      const info = { key: b.key, codeHash: await sha256(cleanCode(b.code)), computer: String(b.computer || 'laptop').slice(0, 40), linked: new Date().toISOString() };
+      await env.BRIDGETTE_KV.put('laptop', JSON.stringify(info));
+      return json({ ok: true, message: `Linked as ${info.computer}.` });
+    }
+
+    // The laptop helper calls these. It reaches OUT to Bridgette; nothing reaches in to it.
+    if (url.pathname === '/api/laptop/poll' && req.method === 'POST') {
+      if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
+      const L = await env.BRIDGETTE_KV.get('laptop', 'json');
+      if (!L || req.headers.get('x-laptop-key') !== L.key) return json({ error: 'Wrong key.' }, 401);
+      // Long-poll: wait up to ~20s for a job so work starts quickly without hammering.
+      const stop = Date.now() + 20000;
+      do {
+        const list = await env.BRIDGETTE_KV.list({ prefix: 'job:' });
+        if (list.keys.length) {
+          const jobs = (await Promise.all(list.keys.map((k) => env.BRIDGETTE_KV.get(k.name, 'json')))).filter(Boolean).sort((a, b2) => a.created - b2.created);
+          const job = jobs[0];
+          await env.BRIDGETTE_KV.delete('job:' + job.id); // taken — only one laptop runs it
+          return json({ job });
+        }
+        if (Date.now() < stop) await new Promise((res) => setTimeout(res, 2000));
+      } while (Date.now() < stop);
+      return json({ none: true });
+    }
+
+    if (url.pathname === '/api/laptop/result' && req.method === 'POST') {
+      if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
+      const L = await env.BRIDGETTE_KV.get('laptop', 'json');
+      if (!L || req.headers.get('x-laptop-key') !== L.key) return json({ error: 'Wrong key.' }, 401);
+      const b = await req.json().catch(() => ({}));
+      if (!b.id) return json({ error: 'No job id.' }, 400);
+      await env.BRIDGETTE_KV.put('result:' + b.id, JSON.stringify({ result: b.result ?? {} }), { expirationTtl: 300 });
+      return json({ ok: true });
+    }
+
+    if (url.pathname === '/api/laptop/unlink' && req.method === 'POST') {
+      if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
+      const L = await laptopInfo(env);
+      if (L && !(await laptopCodeOk(env, req.headers.get('x-laptop-code')))) return json({ error: 'Enter the laptop code first.' }, 403);
+      if (env.BRIDGETTE_KV) await env.BRIDGETTE_KV.delete('laptop');
+      return json({ ok: true });
     }
 
     if (url.pathname === '/api/memory') {
@@ -495,4 +614,4 @@ export default {
   },
 };
 
-export { calculate, floorPlanSvg, chat, htmlToDocx, viewerPage };
+export { calculate, floorPlanSvg, chat, htmlToDocx, viewerPage, runTool };
