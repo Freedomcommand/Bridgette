@@ -12,6 +12,10 @@ const DEFAULT_BRAINS = [
     url: 'https://api.groq.com/openai/v1/chat/completions' },
   { name: 'GitHub',     key: 'GITHUB_TOKEN',       modelVar: 'GITHUB_MODEL',     model: 'openai/gpt-4.1-mini',
     url: 'https://models.github.ai/inference/chat/completions' },
+  { name: 'Cerebras',   key: 'CEREBRAS_API_KEY',   modelVar: 'CEREBRAS_MODEL',   model: 'gpt-oss-120b',
+    url: 'https://api.cerebras.ai/v1/chat/completions' },
+  { name: 'Mistral',    key: 'MISTRAL_API_KEY',    modelVar: 'MISTRAL_MODEL',    model: 'mistral-small-latest',
+    url: 'https://api.mistral.ai/v1/chat/completions' },
   { name: 'OpenRouter', key: 'OPENROUTER_API_KEY', modelVar: 'OPENROUTER_MODEL', model: 'openrouter/free',
     url: 'https://openrouter.ai/api/v1/chat/completions' },
 ];
@@ -346,7 +350,7 @@ function brainsFor(env) {
 
 async function askBrains(env, messages, skip) {
   const brains = brainsFor(env);
-  if (!brains.length) throw new Error('No brain keys are set yet. Add at least one key (Gemini, Groq, GitHub, or OpenRouter) in Cloudflare settings.');
+  if (!brains.length) throw new Error('No brain keys are set yet. Add at least one key (Gemini, Groq, GitHub, Cerebras, Mistral, or OpenRouter) in Cloudflare settings.');
   const errors = [];
   // Two passes: if every brain was busy (5xx / network), wait a moment and try them all once more.
   for (let pass = 0; pass < 2; pass++) {
