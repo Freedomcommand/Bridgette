@@ -71,6 +71,21 @@ let key = store.get('bridgette.key', '');
 let speak = store.get('bridgette.speak', false);
 let laptopCode = store.get('bridgette.laptopCode', '');
 
+// Pick a female voice for read-aloud (names vary by device, so match known female ones and avoid male ones).
+let chosenVoice = null;
+function pickFemaleVoice() {
+  const voices = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+  if (!voices.length) return null;
+  const en = voices.filter((v) => /^en/i.test(v.lang));
+  const pool = en.length ? en : voices;
+  const prefer = ['zira', 'aria', 'jenny', 'michelle', 'eva', 'hazel', 'susan', 'samantha', 'sonia', 'libby', 'emma', 'female', 'google us english'];
+  for (const name of prefer) { const m = pool.find((v) => v.name.toLowerCase().includes(name)); if (m) return m; }
+  const male = /(david|mark|george|james|guy|ryan|male|paul|fred|daniel|alex|thomas)/i;
+  return pool.find((v) => !male.test(v.name)) || pool[0];
+}
+function loadVoice() { chosenVoice = pickFemaleVoice(); }
+if ('speechSynthesis' in window) { loadVoice(); speechSynthesis.onvoiceschanged = loadVoice; }
+
 function linkify(text) {
   const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // [Open the grant](https://...) becomes a clean clickable button-style link; bare links still work.
@@ -115,7 +130,7 @@ async function send(text) {
     const meta = document.createElement('div'); meta.className = 'meta';
     meta.textContent = 'brain: ' + j.brain + (j.steps && j.steps.length ? ' · used: ' + j.steps.map(s => s.tool).join(', ') : '');
     add('assistant', j.reply, meta);
-    if (speak && 'speechSynthesis' in window) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(j.reply.replace(/https?:\/\/\S+/g, 'link'))); }
+    if (speak && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(j.reply.replace(/https?:\/\/\S+/g, 'link')); if (!chosenVoice) loadVoice(); if (chosenVoice) u.voice = chosenVoice; speechSynthesis.cancel(); speechSynthesis.speak(u); }
   } catch (e) {
     t.remove();
     const er = document.createElement('div'); er.className = 'err'; er.textContent = 'Could not reach Bridgette: ' + e.message; $('log').appendChild(er);
