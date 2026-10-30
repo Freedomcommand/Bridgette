@@ -51,6 +51,7 @@
     <h1>Bridgette</h1>
     <button id="laptopBtn" title="Let this device use the laptop">💻 Laptop</button>
     <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
+    <button id="brainBtn" title="Switch which AI she uses">🧠 AIs</button>
     <button id="histBtn" title="Past chats">🕘 History</button>
     <button id="newChat">New chat</button>
   </header>
@@ -61,6 +62,11 @@
     <button class="btn" id="send">Send</button>
   </form>
 </div>
+<div id="brains"><div class="sheet">
+  <div class="sheetbar"><b>Which AI (brain)</b><button id="brainClose">Close</button></div>
+  <div id="brainList"></div>
+  <p style="color:var(--muted);padding:12px 16px;font-size:13px;margin:0">Star = try this one first. Switch off any you don't want her to use. She still auto-switches if one's busy.</p>
+</div></div>
 <div id="history"><div class="sheet">
   <div class="sheetbar"><b>Past chats</b><button id="histClose">Close</button></div>
   <div id="histList"></div>
@@ -82,6 +88,7 @@ let history = store.get('bridgette.history', []);
 let key = store.get('bridgette.key', '');
 let speak = store.get('bridgette.speak', false);
 let laptopCode = store.get('bridgette.laptopCode', '');
+let brainPref = store.get('bridgette.brainPref', { preferred: '', disabled: [] });
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 let chatId = store.get('bridgette.chatId', '');
 if (!chatId) { chatId = newId(); store.set('bridgette.chatId', chatId); }
@@ -151,7 +158,7 @@ async function send(text) {
   $('send').disabled = true;
   try {
     const r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridgette-key': key, 'x-laptop-code': laptopCode },
-      body: JSON.stringify({ messages: history }) });
+      body: JSON.stringify({ messages: history, brainPref }) });
     const j = await r.json();
     t.remove();
     if (r.status === 401) { showLogin(); history.pop(); return; }
@@ -226,6 +233,35 @@ $('laptopBtn').onclick = async () => {
   const ok = await checkLaptop();
   add('assistant', ok ? 'Laptop code saved on this device. I can work on your laptop now.' : 'That laptop code did not match. Tap 💻 Laptop and try again.');
 };
+
+// Switch which AI (brain) she uses — pick one to try first, or switch some off.
+$('brainClose').onclick = () => { $('brains').style.display = 'none'; };
+$('brainBtn').onclick = async () => {
+  $('brains').style.display = 'flex'; $('brainList').textContent = 'Loading…';
+  try {
+    const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } });
+    const j = await r.json();
+    const names = (j.brains || []).map((s) => String(s).split(' (')[0]);
+    if (!names.length) { $('brainList').innerHTML = '<p style="color:var(--muted);padding:16px">No AIs are set up yet.</p>'; return; }
+    renderBrains(names);
+  } catch (e) { $('brainList').textContent = 'Could not load.'; }
+};
+function renderBrains(names) {
+  $('brainList').innerHTML = '';
+  for (const name of names) {
+    const disabled = (brainPref.disabled || []).includes(name);
+    const row = document.createElement('div'); row.className = 'histrow'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '12px';
+    const star = document.createElement('button'); star.textContent = brainPref.preferred === name ? '★' : '☆';
+    star.style.cssText = 'background:none;border:none;color:var(--accent);font-size:22px;cursor:pointer;padding:0';
+    const label = document.createElement('span'); label.className = 'htitle'; label.style.flex = '1'; label.textContent = name;
+    const toggle = document.createElement('button'); toggle.textContent = disabled ? 'Off' : 'On';
+    toggle.style.cssText = 'border:1px solid #3a5674;border-radius:8px;padding:6px 16px;cursor:pointer;font-weight:bold;background:none;color:' + (disabled ? 'var(--muted)' : '#8fe388');
+    star.onclick = () => { brainPref.preferred = brainPref.preferred === name ? '' : name; store.set('bridgette.brainPref', brainPref); renderBrains(names); };
+    toggle.onclick = () => { const d = new Set(brainPref.disabled || []); if (d.has(name)) d.delete(name); else d.add(name); brainPref.disabled = [...d]; store.set('bridgette.brainPref', brainPref); renderBrains(names); };
+    row.appendChild(star); row.appendChild(label); row.appendChild(toggle);
+    $('brainList').appendChild(row);
+  }
+}
 
 function showLogin() { $('login').style.display = 'flex'; $('pass').focus(); }
 $('passGo').onclick = async () => {

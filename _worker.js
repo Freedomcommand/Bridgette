@@ -414,8 +414,23 @@ function brainsFor(env) {
   return list.filter((b) => b.apiKey);
 }
 
-async function askBrains(env, messages, skip) {
-  const brains = brainsFor(env);
+// Freedom can pick which brain she uses first and switch some off; auto-fallback still covers the rest.
+function orderBrains(brains, prefs) {
+  if (!prefs) return brains;
+  let list = brains;
+  if (Array.isArray(prefs.disabled) && prefs.disabled.length) {
+    const kept = list.filter((b) => !prefs.disabled.includes(b.name));
+    if (kept.length) list = kept; // never switch every brain off
+  }
+  if (prefs.preferred) {
+    const i = list.findIndex((b) => b.name === prefs.preferred);
+    if (i > 0) list = [list[i], ...list.slice(0, i), ...list.slice(i + 1)];
+  }
+  return list;
+}
+
+async function askBrains(env, messages, skip, prefs) {
+  const brains = orderBrains(brainsFor(env), prefs);
   if (!brains.length) throw new Error('No brain keys are set yet. Add at least one key (Gemini, Groq, GitHub, Cerebras, Mistral, or OpenRouter) in Cloudflare settings.');
   const errors = [];
   // Two passes: if every brain was busy (5xx / network), wait a moment and try them all once more.
@@ -459,7 +474,7 @@ async function chat(env, origin, history, ctx = {}) {
   const skip = new Set();
   let used = '';
   for (let step = 0; step < MAX_STEPS; step++) {
-    const { brain, msg } = await askBrains(env, messages, skip);
+    const { brain, msg } = await askBrains(env, messages, skip, ctx.brainPref);
     used = brain;
     const calls = msg.tool_calls || [];
     if (!calls.length) return { reply: msg.content || '', brain: used, steps };
@@ -473,7 +488,7 @@ async function chat(env, origin, history, ctx = {}) {
     }
   }
   messages.push({ role: 'user', content: 'Stop using tools now and give Freedom your answer with what you have.' });
-  const { brain, msg } = await askBrains(env, messages.map((m) => m), skip);
+  const { brain, msg } = await askBrains(env, messages.map((m) => m), skip, ctx.brainPref);
   return { reply: msg.content || '(no answer)', brain, steps };
 }
 
@@ -505,7 +520,8 @@ export default {
         const history = (body.messages || []).filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
           .map((m) => ({ role: m.role, content: m.content }));
         const laptopOk = await laptopCodeOk(env, req.headers.get('x-laptop-code'));
-        return json(await chat(env, origin, history, { laptopOk }));
+        const brainPref = body.brainPref && typeof body.brainPref === 'object' ? body.brainPref : null;
+        return json(await chat(env, origin, history, { laptopOk, brainPref }));
       } catch (e) {
         return json({ error: String(e.message || e) }, 500);
       }
