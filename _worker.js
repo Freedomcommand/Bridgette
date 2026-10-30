@@ -2,18 +2,20 @@
 // One Cloudflare Worker: serves the app (icon/installable) and runs the thinking loop.
 // Several free brains are chained: if one is out of free uses or down, she moves to the next.
 
+// Ordered fastest-but-sharp first. Cerebras and Groq are built for speed and still strong,
+// so Bridgette feels snappy; Gemini and the rest stay as backups when the fast ones are busy.
 const DEFAULT_BRAINS = [
+  { name: 'Cerebras',   key: 'CEREBRAS_API_KEY',   modelVar: 'CEREBRAS_MODEL',   model: 'gpt-oss-120b',
+    url: 'https://api.cerebras.ai/v1/chat/completions' },
+  { name: 'Groq',       key: 'GROQ_API_KEY',       modelVar: 'GROQ_MODEL',       model: 'llama-3.3-70b-versatile',
+    url: 'https://api.groq.com/openai/v1/chat/completions' },
   { name: 'Gemini',     key: 'GEMINI_API_KEY',     modelVar: 'GEMINI_MODEL',     model: 'gemini-flash-latest',
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' },
   // Same Google key, lighter model: used when the main Gemini model is busy.
   { name: 'GeminiLite', key: 'GEMINI_API_KEY',     modelVar: 'GEMINI_LITE_MODEL', model: 'gemini-flash-lite-latest',
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' },
-  { name: 'Groq',       key: 'GROQ_API_KEY',       modelVar: 'GROQ_MODEL',       model: 'llama-3.3-70b-versatile',
-    url: 'https://api.groq.com/openai/v1/chat/completions' },
   { name: 'GitHub',     key: 'GITHUB_TOKEN',       modelVar: 'GITHUB_MODEL',     model: 'openai/gpt-4.1-mini',
     url: 'https://models.github.ai/inference/chat/completions' },
-  { name: 'Cerebras',   key: 'CEREBRAS_API_KEY',   modelVar: 'CEREBRAS_MODEL',   model: 'gpt-oss-120b',
-    url: 'https://api.cerebras.ai/v1/chat/completions' },
   { name: 'Mistral',    key: 'MISTRAL_API_KEY',    modelVar: 'MISTRAL_MODEL',    model: 'mistral-small-latest',
     url: 'https://api.mistral.ai/v1/chat/completions' },
   { name: 'OpenRouter', key: 'OPENROUTER_API_KEY', modelVar: 'OPENROUTER_MODEL', model: 'openrouter/free',
