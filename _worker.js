@@ -39,6 +39,7 @@ How you work:
 - When he asks you to save something you already wrote earlier in the chat, copy that full text into save_file; do not shorten it.
 - For a house or room design, use draw_floor_plan first (the skeleton blueprint), then describe it.
 - When he tells you something worth keeping about him or his work, use remember.
+- Designing in 3D: use the blender tool for anything 3D — modeling, products, home parts, moving parts, renders. Write a complete, self-contained Blender Python script (start with 'import bpy, os'); it runs on his PC. Always save a .blend to his Desktop, and when he wants to see it, also render a .png to his Desktop. For moving parts, set keyframes so it animates. After it runs, tell him exactly where the .blend and .png are so he can open them. If it says Blender wasn't found or the laptop isn't answering, tell him plainly.
 
 Working on Freedom's laptop (Windows):
 - You can work on his laptop directly with laptop_run (PowerShell commands), laptop_read (open a file or list a folder) and laptop_write (make or change a file). Use them whenever he asks you to do something on his computer: find, open, make, move, rename, organize, clean up, check space, install, run programs.
@@ -76,6 +77,8 @@ const TOOLS = [
     parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'laptop_write', description: "Make or change a text file on Freedom's laptop (creates folders as needed). Set append true to add to the end instead of replacing.",
     parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, append: { type: 'boolean' } }, required: ['path', 'content'] } } },
+  { type: 'function', function: { name: 'blender', description: "Design in 3D with Blender on Freedom's PC (modeling, products, moving parts, renders). Give a COMPLETE Blender Python script (bpy); it runs on the PC in the background. Start with 'import bpy, os'. ALWAYS save the result: bpy.ops.wm.save_as_mainfile(filepath=os.path.expanduser('~/Desktop/<name>.blend')). When he should SEE it, also render a picture: set bpy.context.scene.render.filepath=os.path.expanduser('~/Desktop/<name>.png') then bpy.ops.render.render(write_still=True). For moving parts, keyframe with obj.keyframe_insert. Then tell Freedom exactly where you saved the .blend and .png so he can open them.",
+    parameters: { type: 'object', properties: { script: { type: 'string', description: 'Full Blender bpy Python script' } }, required: ['script'] } } },
   { type: 'function', function: { name: 'draw_floor_plan', description: 'Draw a blueprint-style floor plan. Rooms are rectangles in feet; x,y is the top-left corner. Doors/windows optional.',
     parameters: { type: 'object', properties: {
       title: { type: 'string' },
@@ -396,6 +399,14 @@ async function runTool(name, args, env, origin, ctx = {}) {
       }
       case 'laptop_read': return await laptopCall(env, 'read', { path: String(args.path || '') }, 90, ctx);
       case 'laptop_write': return await laptopCall(env, 'write', { path: String(args.path || ''), content: String(args.content ?? ''), append: !!args.append }, 90, ctx);
+      case 'blender': {
+        const script = String(args.script || '');
+        if (!script.trim()) return { error: 'No Blender script given.' };
+        const w = await laptopCall(env, 'write', { path: '~/BridgetteLink/blender_job.py', content: script }, 90, ctx);
+        if (w && w.error) return w;
+        const cmd = "$ErrorActionPreference='Continue'; $b = Get-ChildItem 'C:\\Program Files\\Blender Foundation','C:\\Program Files (x86)\\Blender Foundation' -Filter blender.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; if (-not $b) { 'ERROR: Blender was not found on this PC.' } else { & $b --background --python \"$env:USERPROFILE\\BridgetteLink\\blender_job.py\" 2>&1 }";
+        return await laptopCall(env, 'run', { command: cmd, timeout: 220 }, 240, ctx);
+      }
       case 'draw_floor_plan': {
         const svg = floorPlanSvg(args);
         return await storeFile(env, origin, args.title || 'floor-plan', 'svg', svg);
