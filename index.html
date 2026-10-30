@@ -13,7 +13,7 @@
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:18px/1.45 system-ui, Segoe UI, Roboto, Arial, sans-serif; }
   #app { display:flex; flex-direction:column; height:100dvh; max-width:900px; margin:0 auto; }
-  header { display:flex; align-items:center; gap:10px; padding:12px 16px; background:var(--panel); }
+  header { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 16px; background:var(--panel); }
   header img { width:36px; height:36px; border-radius:8px; }
   header h1 { font-size:22px; margin:0; flex:1; }
   header button { background:none; border:1px solid #3a5674; color:var(--muted); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; }
@@ -35,6 +35,13 @@
   #login div { background:var(--panel); padding:24px; border-radius:16px; width:100%; max-width:360px; text-align:center; }
   #login input { width:100%; padding:12px; font:inherit; border-radius:10px; border:1px solid #3a5674; background:#0f1e2e; color:var(--text); margin:12px 0; }
   .thinking { align-self:flex-start; color:var(--muted); font-style:italic; }
+  #history { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; z-index:20; }
+  #history .sheet { background:var(--panel); border-radius:16px; width:100%; max-width:480px; max-height:80vh; overflow:auto; }
+  .sheetbar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; position:sticky; top:0; background:var(--panel); border-bottom:1px solid #223a52; }
+  .histrow { padding:12px 16px; border-bottom:1px solid #223a52; cursor:pointer; }
+  .histrow:hover { background:#1c344c; }
+  .htitle { display:block; color:var(--text); font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hwhen { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
 </style>
 </head>
 <body>
@@ -44,6 +51,7 @@
     <h1>Bridgette</h1>
     <button id="laptopBtn" title="Let this device use the laptop">💻 Laptop</button>
     <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
+    <button id="histBtn" title="Past chats">🕘 History</button>
     <button id="newChat">New chat</button>
   </header>
   <div id="log"></div>
@@ -53,6 +61,10 @@
     <button class="btn" id="send">Send</button>
   </form>
 </div>
+<div id="history"><div class="sheet">
+  <div class="sheetbar"><b>Past chats</b><button id="histClose">Close</button></div>
+  <div id="histList"></div>
+</div></div>
 <div id="login"><div>
   <img src="/icon-192.png" alt="" width="72">
   <h2>Bridgette</h2>
@@ -70,6 +82,25 @@ let history = store.get('bridgette.history', []);
 let key = store.get('bridgette.key', '');
 let speak = store.get('bridgette.speak', false);
 let laptopCode = store.get('bridgette.laptopCode', '');
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+let chatId = store.get('bridgette.chatId', '');
+if (!chatId) { chatId = newId(); store.set('bridgette.chatId', chatId); }
+
+// Save the current conversation to Bridgette's cloud storage so it's there on any device.
+async function saveChat() {
+  if (!history.length) return;
+  try {
+    await fetch('/api/chats', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridgette-key': key },
+      body: JSON.stringify({ id: chatId, messages: history, title: (history.find((m) => m.role === 'user') || {}).content }) });
+  } catch (e) {}
+}
+async function openChat(id) {
+  try {
+    const r = await fetch('/api/chats/' + encodeURIComponent(id), { headers: { 'x-bridgette-key': key } });
+    const j = await r.json();
+    if (j.messages) { await saveChat(); chatId = id; store.set('bridgette.chatId', chatId); history = j.messages; store.set('bridgette.history', history); render(); $('history').style.display = 'none'; }
+  } catch (e) {}
+}
 
 // Pick a female voice for read-aloud (names vary by device, so match known female ones and avoid male ones).
 let chosenVoice = null;
@@ -130,6 +161,7 @@ async function send(text) {
     const meta = document.createElement('div'); meta.className = 'meta';
     meta.textContent = 'brain: ' + j.brain + (j.steps && j.steps.length ? ' · used: ' + j.steps.map(s => s.tool).join(', ') : '');
     add('assistant', j.reply, meta);
+    saveChat();
     if (speak && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(j.reply.replace(/https?:\/\/\S+/g, 'link')); if (!chosenVoice) loadVoice(); if (chosenVoice) u.voice = chosenVoice; speechSynthesis.cancel(); speechSynthesis.speak(u); }
   } catch (e) {
     t.remove();
@@ -140,7 +172,25 @@ async function send(text) {
 
 $('f').addEventListener('submit', (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; send(v); });
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
-$('newChat').onclick = () => { history = []; store.set('bridgette.history', history); render(); };
+$('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.set('bridgette.chatId', chatId); history = []; store.set('bridgette.history', history); render(); };
+$('histClose').onclick = () => { $('history').style.display = 'none'; };
+$('histBtn').onclick = async () => {
+  $('history').style.display = 'flex'; $('histList').textContent = 'Loading…';
+  try {
+    const r = await fetch('/api/chats', { headers: { 'x-bridgette-key': key } });
+    const j = await r.json();
+    const chats = j.chats || [];
+    if (!chats.length) { $('histList').innerHTML = '<p style="color:var(--muted);padding:16px">No saved chats yet.</p>'; return; }
+    $('histList').innerHTML = '';
+    for (const c of chats) {
+      const row = document.createElement('div'); row.className = 'histrow';
+      const t = document.createElement('span'); t.className = 'htitle'; t.textContent = c.title || 'Chat';
+      const w = document.createElement('span'); w.className = 'hwhen'; w.textContent = c.updated ? new Date(c.updated).toLocaleString() : '';
+      row.appendChild(t); row.appendChild(w); row.onclick = () => openChat(c.id);
+      $('histList').appendChild(row);
+    }
+  } catch (e) { $('histList').textContent = 'Could not load history.'; }
+};
 $('speakToggle').onclick = () => { speak = !speak; store.set('bridgette.speak', speak); updateSpeakBtn(); if (!speak && 'speechSynthesis' in window) speechSynthesis.cancel(); };
 
 // voice input

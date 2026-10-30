@@ -575,6 +575,38 @@ export default {
       return json({ memory: await getMemory(env) });
     }
 
+    // Saved chat history — kept in storage so it's there on any device.
+    if (url.pathname === '/api/chats' && req.method === 'GET') {
+      if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
+      if (!env.BRIDGETTE_KV) return json({ chats: [] });
+      const l = await env.BRIDGETTE_KV.list({ prefix: 'chat:' });
+      const chats = l.keys.map((k) => ({ id: k.name.slice(5), title: (k.metadata && k.metadata.title) || 'Chat', updated: (k.metadata && k.metadata.updated) || 0 }))
+        .sort((a, b) => (b.updated || 0) - (a.updated || 0));
+      return json({ chats });
+    }
+    if (url.pathname === '/api/chats' && req.method === 'POST') {
+      if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
+      if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
+      const b = await req.json().catch(() => ({}));
+      const id = String(b.id || '').replace(/[^a-z0-9]/gi, '').slice(0, 60);
+      const messages = Array.isArray(b.messages) ? b.messages.filter((m) => m && typeof m.content === 'string').slice(-200) : [];
+      if (!id || !messages.length) return json({ error: 'Nothing to save.' }, 400);
+      const firstUser = messages.find((m) => m.role === 'user');
+      const title = String(b.title || (firstUser && firstUser.content) || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';
+      await env.BRIDGETTE_KV.put('chat:' + id, JSON.stringify({ messages }), { metadata: { title, updated: Date.now() } });
+      return json({ ok: true });
+    }
+    if (url.pathname.startsWith('/api/chats/')) {
+      if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
+      if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
+      const id = decodeURIComponent(url.pathname.slice('/api/chats/'.length));
+      if (!id) return json({ error: 'No chat id.' }, 400);
+      if (req.method === 'DELETE') { await env.BRIDGETTE_KV.delete('chat:' + id); return json({ ok: true }); }
+      const v = await env.BRIDGETTE_KV.get('chat:' + id, 'json');
+      if (!v) return json({ error: 'Not found' }, 404);
+      return json({ id, messages: v.messages || [] });
+    }
+
     if (url.pathname.startsWith('/view/')) {
       // Bridgette's own document page (read, fix, print, download as Word)
       if (!env.BRIDGETTE_KV) return new Response(KV_MISSING, { status: 503 });
