@@ -244,7 +244,7 @@ async function send(text) {
   } finally { $('send').disabled = false; }
 }
 
-$('f').addEventListener('submit', (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; send(v); });
+$('f').addEventListener('submit', (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; stopMic(); send(v); });
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
 $('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.set('bridgette.chatId', chatId); history = []; saveLocal(); render(); };
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
@@ -279,11 +279,11 @@ $('file').onchange = async (e) => {
 
 // voice input
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null;
+let rec = null, listening = false, before = '';
+function stopMic() { if (rec && listening) { listening = false; try { rec.stop(); } catch (e) {} } before = ''; const m = $('mic'); if (m) m.classList.remove('on'); }
 if (SR) {
-  // Keeps listening through pauses until Freedom taps the mic again; never auto-sends.
+  // Keeps listening through pauses until Freedom taps the mic again; turns off when he sends.
   rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
-  let listening = false, before = '';
   rec.onresult = (e) => { $('q').value = (before + ' ' + Array.from(e.results).map(r => r[0].transcript).join('')).trim(); };
   rec.onend = () => { if (listening) { before = $('q').value; try { rec.start(); } catch (err) {} } else { $('mic').classList.remove('on'); } };
   $('mic').onclick = () => {
