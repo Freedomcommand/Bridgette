@@ -39,6 +39,7 @@ How you work:
 - When he asks you to save something you already wrote earlier in the chat, copy that full text into save_file; do not shorten it.
 - For a house or room design, use draw_floor_plan first (the skeleton blueprint), then describe it.
 - When he tells you something worth keeping about him or his work, use remember.
+- To read what's INSIDE a document on his PC (Word, Excel, a text file) — to summarize it, check it, or pull info from it — use read_document with the file's path. laptop_read is only for plain text and listing folders; read_document handles Word and Excel too.
 - You can SEE photos Freedom sends. When he attaches a picture, look at it and answer about what's actually in it. He can also attach text files; their contents are included in his message.
 - Designing in 3D: use the blender tool for anything 3D — modeling, products, home parts, moving parts, renders. Write a complete, self-contained Blender Python script (start with 'import bpy, os'); it runs on his PC. Always save a .blend to his Desktop, and when he wants to see it, also render a .png to his Desktop. For moving parts, set keyframes so it animates. After it runs, tell him exactly where the .blend and .png are so he can open them. If it says Blender wasn't found or the laptop isn't answering, tell him plainly.
 
@@ -78,6 +79,8 @@ const TOOLS = [
     parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'laptop_write', description: "Make or change a text file on Freedom's laptop (creates folders as needed). Set append true to add to the end instead of replacing.",
     parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, append: { type: 'boolean' } }, required: ['path', 'content'] } } },
+  { type: 'function', function: { name: 'read_document', description: "Read the real contents of a document on Freedom's PC — Word (.docx), Excel (.xlsx), and text files (.txt, .md, .csv, code, etc.). Use this when he asks what's in a file or to read/summarize a document. Paths may start with ~ for his home folder. (Pictures: ask him to send them with the clip button so you can see them. PDF not supported yet.)",
+    parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file, e.g. ~/Desktop/resume.docx' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'blender', description: "Design in 3D with Blender on Freedom's PC (modeling, products, moving parts, renders). Give a COMPLETE Blender Python script (bpy); it runs on the PC in the background. Start with 'import bpy, os'. ALWAYS save the result: bpy.ops.wm.save_as_mainfile(filepath=os.path.expanduser('~/Desktop/<name>.blend')). When he should SEE it, also render a picture: set bpy.context.scene.render.filepath=os.path.expanduser('~/Desktop/<name>.png') then bpy.ops.render.render(write_still=True). For moving parts, keyframe with obj.keyframe_insert. Then tell Freedom exactly where you saved the .blend and .png so he can open them.",
     parameters: { type: 'object', properties: { script: { type: 'string', description: 'Full Blender bpy Python script' } }, required: ['script'] } } },
   { type: 'function', function: { name: 'draw_floor_plan', description: 'Draw a blueprint-style floor plan. Rooms are rectangles in feet; x,y is the top-left corner. Doors/windows optional.',
@@ -400,6 +403,13 @@ async function runTool(name, args, env, origin, ctx = {}) {
       }
       case 'laptop_read': return await laptopCall(env, 'read', { path: String(args.path || '') }, 90, ctx);
       case 'laptop_write': return await laptopCall(env, 'write', { path: String(args.path || ''), content: String(args.content ?? ''), append: !!args.append }, 90, ctx);
+      case 'read_document': {
+        const path = String(args.path || '');
+        if (!path.trim()) return { error: 'No file path given.' };
+        const esc = path.replace(/'/g, "''");
+        const cmd = "$d=\"$env:USERPROFILE\\BridgetteLink\"; if(-not(Test-Path $d)){New-Item -ItemType Directory -Path $d -Force | Out-Null}; $f=\"$d\\readdoc.ps1\"; try { Invoke-WebRequest -UseBasicParsing 'https://bridgette.pages.dev/laptop/readdoc.ps1' -OutFile $f -TimeoutSec 20 } catch {}; if(-not(Test-Path $f)){ 'ERROR: could not get the document reader onto the PC (no internet?).' } else { & $f -Path '" + esc + "' }";
+        return await laptopCall(env, 'run', { command: cmd, timeout: 90 }, 120, ctx);
+      }
       case 'blender': {
         const script = String(args.script || '');
         if (!script.trim()) return { error: 'No Blender script given.' };
