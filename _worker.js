@@ -9,12 +9,12 @@ const DEFAULT_BRAINS = [
     url: 'https://api.cerebras.ai/v1/chat/completions' },
   { name: 'Groq',       key: 'GROQ_API_KEY',       modelVar: 'GROQ_MODEL',       model: 'llama-3.3-70b-versatile',
     url: 'https://api.groq.com/openai/v1/chat/completions' },
-  { name: 'Gemini',     key: 'GEMINI_API_KEY',     modelVar: 'GEMINI_MODEL',     model: 'gemini-flash-latest',
+  { name: 'Gemini',     key: 'GEMINI_API_KEY',     modelVar: 'GEMINI_MODEL',     model: 'gemini-flash-latest', vision: true,
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' },
   // Same Google key, lighter model: used when the main Gemini model is busy.
-  { name: 'GeminiLite', key: 'GEMINI_API_KEY',     modelVar: 'GEMINI_LITE_MODEL', model: 'gemini-flash-lite-latest',
+  { name: 'GeminiLite', key: 'GEMINI_API_KEY',     modelVar: 'GEMINI_LITE_MODEL', model: 'gemini-flash-lite-latest', vision: true,
     url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions' },
-  { name: 'GitHub',     key: 'GITHUB_TOKEN',       modelVar: 'GITHUB_MODEL',     model: 'openai/gpt-4.1-mini',
+  { name: 'GitHub',     key: 'GITHUB_TOKEN',       modelVar: 'GITHUB_MODEL',     model: 'openai/gpt-4.1-mini', vision: true,
     url: 'https://models.github.ai/inference/chat/completions' },
   { name: 'Mistral',    key: 'MISTRAL_API_KEY',    modelVar: 'MISTRAL_MODEL',    model: 'mistral-small-latest',
     url: 'https://api.mistral.ai/v1/chat/completions' },
@@ -39,6 +39,7 @@ How you work:
 - When he asks you to save something you already wrote earlier in the chat, copy that full text into save_file; do not shorten it.
 - For a house or room design, use draw_floor_plan first (the skeleton blueprint), then describe it.
 - When he tells you something worth keeping about him or his work, use remember.
+- You can SEE photos Freedom sends. When he attaches a picture, look at it and answer about what's actually in it. He can also attach text files; their contents are included in his message.
 - Designing in 3D: use the blender tool for anything 3D — modeling, products, home parts, moving parts, renders. Write a complete, self-contained Blender Python script (start with 'import bpy, os'); it runs on his PC. Always save a .blend to his Desktop, and when he wants to see it, also render a .png to his Desktop. For moving parts, set keyframes so it animates. After it runs, tell him exactly where the .blend and .png are so he can open them. If it says Blender wasn't found or the laptop isn't answering, tell him plainly.
 
 Working on Freedom's laptop (Windows):
@@ -440,8 +441,13 @@ function orderBrains(brains, prefs) {
   return list;
 }
 
-async function askBrains(env, messages, skip, prefs) {
-  const brains = orderBrains(brainsFor(env), prefs);
+async function askBrains(env, messages, skip, prefs, requireVision) {
+  let brains = orderBrains(brainsFor(env), prefs);
+  if (requireVision) {
+    const v = brains.filter((b) => b.vision);
+    if (!v.length) throw new Error('To look at a photo, add a Gemini key (the image-capable brain) in Cloudflare settings.');
+    brains = v;
+  }
   if (!brains.length) throw new Error('No brain keys are set yet. Add at least one key (Gemini, Groq, GitHub, Cerebras, Mistral, or OpenRouter) in Cloudflare settings.');
   const errors = [];
   // Two passes: if every brain was busy (5xx / network), wait a moment and try them all once more.
@@ -484,8 +490,10 @@ async function chat(env, origin, history, ctx = {}) {
   const steps = [];
   const skip = new Set();
   let used = '';
+  // If Freedom sent a photo, she must use an image-capable brain.
+  const needVision = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p && p.type === 'image_url'));
   for (let step = 0; step < MAX_STEPS; step++) {
-    const { brain, msg } = await askBrains(env, messages, skip, ctx.brainPref);
+    const { brain, msg } = await askBrains(env, messages, skip, ctx.brainPref, needVision);
     used = brain;
     const calls = msg.tool_calls || [];
     if (!calls.length) return { reply: msg.content || '', brain: used, steps };
@@ -499,7 +507,7 @@ async function chat(env, origin, history, ctx = {}) {
     }
   }
   messages.push({ role: 'user', content: 'Stop using tools now and give Freedom your answer with what you have.' });
-  const { brain, msg } = await askBrains(env, messages.map((m) => m), skip, ctx.brainPref);
+  const { brain, msg } = await askBrains(env, messages.map((m) => m), skip, ctx.brainPref, needVision);
   return { reply: msg.content || '(no answer)', brain, steps };
 }
 
@@ -528,7 +536,8 @@ export default {
       if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
       try {
         const body = await req.json();
-        const history = (body.messages || []).filter((m) => (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+        // content is usually a string; a user message with a photo is an array of parts (text + image_url).
+        const history = (body.messages || []).filter((m) => (m.role === 'user' || m.role === 'assistant') && (typeof m.content === 'string' || Array.isArray(m.content)))
           .map((m) => ({ role: m.role, content: m.content }));
         const laptopOk = await laptopCodeOk(env, req.headers.get('x-laptop-code'));
         const brainPref = body.brainPref && typeof body.brainPref === 'object' ? body.brainPref : null;
@@ -616,7 +625,13 @@ export default {
       if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
       const b = await req.json().catch(() => ({}));
       const id = String(b.id || '').replace(/[^a-z0-9]/gi, '').slice(0, 60);
-      const messages = Array.isArray(b.messages) ? b.messages.filter((m) => m && typeof m.content === 'string').slice(-200) : [];
+      // Keep saved chats small: drop the heavy image data, leaving a [photo] marker.
+      const lighten = (c) => {
+        if (typeof c === 'string') return c;
+        if (Array.isArray(c)) return c.map((p) => (p && p.type === 'image_url') ? '[photo]' : (p && p.text) || '').filter(Boolean).join(' ') || '[photo]';
+        return '';
+      };
+      const messages = Array.isArray(b.messages) ? b.messages.filter((m) => m && (typeof m.content === 'string' || Array.isArray(m.content))).slice(-200).map((m) => ({ role: m.role, content: lighten(m.content) })) : [];
       if (!id || !messages.length) return json({ error: 'Nothing to save.' }, 400);
       const firstUser = messages.find((m) => m.role === 'user');
       const title = String(b.title || (firstUser && firstUser.content) || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';

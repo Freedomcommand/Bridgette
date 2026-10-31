@@ -35,6 +35,13 @@
   #login div { background:var(--panel); padding:24px; border-radius:16px; width:100%; max-width:360px; text-align:center; }
   #login input { width:100%; padding:12px; font:inherit; border-radius:10px; border:1px solid #3a5674; background:#0f1e2e; color:var(--text); margin:12px 0; }
   .thinking { align-self:flex-start; color:var(--muted); font-style:italic; }
+  #attach { background:#2b4866; color:#fff; }
+  #pending { display:flex; flex-wrap:wrap; gap:8px; padding:0 16px; }
+  #pending:empty { display:none; }
+  .chip { display:flex; align-items:center; gap:6px; background:var(--panel); border:1px solid #3a5674; border-radius:10px; padding:4px 8px; font-size:13px; color:var(--muted); }
+  .chip img { width:32px; height:32px; object-fit:cover; border-radius:6px; }
+  .chip button { background:none; border:none; color:#ff9a9a; font-size:16px; cursor:pointer; padding:0 2px; }
+  .msg img.photo { max-width:220px; border-radius:10px; margin-top:6px; display:block; }
   #history, #brains { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; z-index:20; }
   #history .sheet, #brains .sheet { background:var(--panel); border-radius:16px; width:100%; max-width:480px; max-height:80vh; overflow:auto; }
   .sheetbar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; position:sticky; top:0; background:var(--panel); border-bottom:1px solid #223a52; }
@@ -56,7 +63,10 @@
     <button id="newChat">New chat</button>
   </header>
   <div id="log"></div>
+  <div id="pending"></div>
   <form id="f">
+    <button type="button" class="btn" id="attach" title="Add a photo or file">📎</button>
+    <input type="file" id="file" accept="image/*,.txt,.md,.csv,.json" multiple style="display:none">
     <button type="button" class="btn" id="mic" title="Talk">🎤</button>
     <textarea id="q" rows="2" placeholder="Tap 🎤 to talk (tap again to stop), then press Send…"></textarea>
     <button class="btn" id="send">Send</button>
@@ -89,6 +99,53 @@ let key = store.get('bridgette.key', '');
 let speak = store.get('bridgette.speak', false);
 let laptopCode = store.get('bridgette.laptopCode', '');
 let brainPref = store.get('bridgette.brainPref', { preferred: '', disabled: [] });
+
+// Photos and files Freedom attaches before sending.
+let pending = [];
+function fileToDataURL(file) {
+  return new Promise((resolve) => {
+    const rd = new FileReader();
+    rd.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 1024; let w = img.width, h = img.height;
+        if (w > max || h > max) { const s = Math.min(max / w, max / h); w = Math.round(w * s); h = Math.round(h * s); }
+        try { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); resolve(c.toDataURL('image/jpeg', 0.85)); }
+        catch (e) { resolve(rd.result); }
+      };
+      img.onerror = () => resolve(rd.result);
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+function renderPending() {
+  const el = $('pending'); el.innerHTML = '';
+  pending.forEach((p, i) => {
+    const chip = document.createElement('div'); chip.className = 'chip';
+    if (p.kind === 'image') { const im = document.createElement('img'); im.src = p.url; chip.appendChild(im); }
+    const nm = document.createElement('span'); nm.textContent = p.name.length > 18 ? p.name.slice(0, 16) + '…' : p.name; chip.appendChild(nm);
+    const x = document.createElement('button'); x.textContent = '✕'; x.onclick = () => { pending.splice(i, 1); renderPending(); }; chip.appendChild(x);
+    el.appendChild(chip);
+  });
+}
+function lightenMsg(m) {
+  if (Array.isArray(m.content)) return { role: m.role, content: m.content.map((p) => p && p.type === 'image_url' ? '[photo]' : (p && p.text) || '').filter(Boolean).join(' ') || '[photo]' };
+  return m;
+}
+function saveLocal() { try { store.set('bridgette.history', history.map(lightenMsg)); } catch (e) {} }
+function contentToHtml(content) {
+  if (typeof content === 'string') return linkify(content);
+  if (Array.isArray(content)) {
+    let html = '';
+    for (const p of content) {
+      if (p && p.type === 'text' && p.text) html += linkify(p.text);
+      else if (p && p.type === 'image_url' && p.image_url) html += '<img class="photo" src="' + p.image_url.url + '">';
+    }
+    return html || '[photo]';
+  }
+  return '';
+}
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 let chatId = store.get('bridgette.chatId', '');
 if (!chatId) { chatId = newId(); store.set('bridgette.chatId', chatId); }
@@ -105,7 +162,7 @@ async function openChat(id) {
   try {
     const r = await fetch('/api/chats/' + encodeURIComponent(id), { headers: { 'x-bridgette-key': key } });
     const j = await r.json();
-    if (j.messages) { await saveChat(); chatId = id; store.set('bridgette.chatId', chatId); history = j.messages; store.set('bridgette.history', history); render(); $('history').style.display = 'none'; }
+    if (j.messages) { await saveChat(); chatId = id; store.set('bridgette.chatId', chatId); history = j.messages; saveLocal(); render(); $('history').style.display = 'none'; }
   } catch (e) {}
 }
 
@@ -135,7 +192,7 @@ function linkify(text) {
 function add(role, text, extra) {
   const d = document.createElement('div');
   d.className = 'msg ' + (role === 'user' ? 'me' : 'her');
-  d.innerHTML = linkify(text);
+  d.innerHTML = contentToHtml(text);
   if (extra) d.appendChild(extra);
   $('log').appendChild(d);
   $('log').scrollTop = $('log').scrollHeight;
@@ -149,10 +206,20 @@ function render() {
 function updateSpeakBtn() { $('speakToggle').textContent = speak ? '🔊 Voice on' : '🔈 Voice off'; }
 
 async function send(text) {
-  if (!text.trim()) return;
-  history.push({ role: 'user', content: text });
-  store.set('bridgette.history', history);
-  add('user', text);
+  if (!text.trim() && !pending.length) return;
+  let content = text;
+  if (pending.length) {
+    const parts = [];
+    let textBlock = text;
+    for (const p of pending.filter((p) => p.kind === 'text')) textBlock += '\n\n[File: ' + p.name + ']\n' + p.content;
+    parts.push({ type: 'text', text: textBlock.trim() || 'Have a look at this.' });
+    for (const p of pending.filter((p) => p.kind === 'image')) parts.push({ type: 'image_url', image_url: { url: p.url } });
+    content = parts;
+    pending = []; renderPending();
+  }
+  history.push({ role: 'user', content });
+  saveLocal();
+  add('user', content);
   const t = document.createElement('div'); t.className = 'thinking'; t.textContent = 'Bridgette is working…';
   $('log').appendChild(t); $('log').scrollTop = $('log').scrollHeight;
   $('send').disabled = true;
@@ -162,9 +229,9 @@ async function send(text) {
     const j = await r.json();
     t.remove();
     if (r.status === 401) { showLogin(); history.pop(); return; }
-    if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; $('log').appendChild(e); history.pop(); store.set('bridgette.history', history); return; }
+    if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; $('log').appendChild(e); history.pop(); saveLocal(); return; }
     history.push({ role: 'assistant', content: j.reply });
-    store.set('bridgette.history', history);
+    saveLocal();
     const meta = document.createElement('div'); meta.className = 'meta';
     meta.textContent = 'brain: ' + j.brain + (j.steps && j.steps.length ? ' · used: ' + j.steps.map(s => s.tool).join(', ') : '');
     add('assistant', j.reply, meta);
@@ -173,13 +240,13 @@ async function send(text) {
   } catch (e) {
     t.remove();
     const er = document.createElement('div'); er.className = 'err'; er.textContent = 'Could not reach Bridgette: ' + e.message; $('log').appendChild(er);
-    history.pop(); store.set('bridgette.history', history);
+    history.pop(); saveLocal();
   } finally { $('send').disabled = false; }
 }
 
 $('f').addEventListener('submit', (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; send(v); });
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
-$('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.set('bridgette.chatId', chatId); history = []; store.set('bridgette.history', history); render(); };
+$('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.set('bridgette.chatId', chatId); history = []; saveLocal(); render(); };
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
 $('histBtn').onclick = async () => {
   $('history').style.display = 'flex'; $('histList').textContent = 'Loading…';
@@ -199,6 +266,16 @@ $('histBtn').onclick = async () => {
   } catch (e) { $('histList').textContent = 'Could not load history.'; }
 };
 $('speakToggle').onclick = () => { speak = !speak; store.set('bridgette.speak', speak); updateSpeakBtn(); if (!speak && 'speechSynthesis' in window) speechSynthesis.cancel(); };
+$('attach').onclick = () => $('file').click();
+$('file').onchange = async (e) => {
+  for (const f of e.target.files) {
+    try {
+      if (f.type && f.type.indexOf('image/') === 0) { pending.push({ kind: 'image', url: await fileToDataURL(f), name: f.name }); }
+      else { const t = await f.text(); pending.push({ kind: 'text', name: f.name, content: t.slice(0, 20000) }); }
+    } catch (err) {}
+  }
+  renderPending(); e.target.value = '';
+};
 
 // voice input
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
