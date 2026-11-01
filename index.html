@@ -135,7 +135,11 @@ function lightenMsg(m) {
 }
 function saveLocal() { try { store.set('bridgette.history', history.map(lightenMsg)); } catch (e) {} }
 function contentToHtml(content) {
-  if (typeof content === 'string') return linkify(content);
+  if (typeof content === 'string') {
+    let html = linkify(content);
+    for (const u of (content.match(/https?:\/\/[^\s)\]]+\.(?:png|jpg|jpeg|webp)/gi) || [])) html += '<img class="photo" src="' + u + '">';
+    return html;
+  }
   if (Array.isArray(content)) {
     let html = '';
     for (const p of content) {

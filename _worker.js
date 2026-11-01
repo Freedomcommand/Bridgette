@@ -40,6 +40,7 @@ How you work:
 - For a house or room design, use draw_floor_plan first (the skeleton blueprint), then describe it.
 - When he tells you something worth keeping about him or his work, use remember.
 - To read what's INSIDE a document on his PC (Word, Excel, a text file) — to summarize it, check it, or pull info from it — use read_document with the file's path. laptop_read is only for plain text and listing folders; read_document handles Word and Excel too.
+- Use generate_image to MAKE pictures and designs from words — clothing-print art for his INI line, logos, graphics. Describe it richly, then give him the link it returns. His brand symbol is a golden eagle with a FREEDOM banner.
 - You can SEE photos Freedom sends. When he attaches a picture, look at it and answer about what's actually in it. He can also attach text files; their contents are included in his message.
 - Designing in 3D: use the blender tool for anything 3D — modeling, products, home parts, moving parts, renders. Write a complete, self-contained Blender Python script (start with 'import bpy, os'); it runs on his PC. Always save a .blend to his Desktop, and when he wants to see it, also render a .png to his Desktop. For moving parts, set keyframes so it animates. After it runs, tell him exactly where the .blend and .png are so he can open them. If it says Blender wasn't found or the laptop isn't answering, tell him plainly.
 
@@ -83,6 +84,8 @@ const TOOLS = [
     parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file, e.g. ~/Desktop/resume.docx' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'blender', description: "Design in 3D with Blender on Freedom's PC (modeling, products, moving parts, renders). Give a COMPLETE Blender Python script (bpy); it runs on the PC in the background. Start with 'import bpy, os'. ALWAYS save the result: bpy.ops.wm.save_as_mainfile(filepath=os.path.expanduser('~/Desktop/<name>.blend')). When he should SEE it, also render a picture: set bpy.context.scene.render.filepath=os.path.expanduser('~/Desktop/<name>.png') then bpy.ops.render.render(write_still=True). For moving parts, keyframe with obj.keyframe_insert. Then tell Freedom exactly where you saved the .blend and .png so he can open them.",
     parameters: { type: 'object', properties: { script: { type: 'string', description: 'Full Blender bpy Python script' } }, required: ['script'] } } },
+  { type: 'function', function: { name: 'generate_image', description: "Make a picture/design from a text description — artwork, logos, clothing-print designs for his INI line, graphics. Describe it richly (subject, style, colors, background). Returns a link to the picture; give Freedom that link. For his clothing, remember his symbol is a golden eagle with a FREEDOM banner when he wants it.",
+    parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'Rich description of the picture to make' } }, required: ['prompt'] } } },
   { type: 'function', function: { name: 'draw_floor_plan', description: 'Draw a blueprint-style floor plan. Rooms are rectangles in feet; x,y is the top-left corner. Doors/windows optional.',
     parameters: { type: 'object', properties: {
       title: { type: 'string' },
@@ -410,6 +413,20 @@ async function runTool(name, args, env, origin, ctx = {}) {
         const cmd = "$d=\"$env:USERPROFILE\\BridgetteLink\"; if(-not(Test-Path $d)){New-Item -ItemType Directory -Path $d -Force | Out-Null}; $f=\"$d\\readdoc.ps1\"; try { Invoke-WebRequest -UseBasicParsing 'https://bridgette.pages.dev/laptop/readdoc.ps1' -OutFile $f -TimeoutSec 20 } catch {}; if(-not(Test-Path $f)){ 'ERROR: could not get the document reader onto the PC (no internet?).' } else { & $f -Path '" + esc + "' }";
         return await laptopCall(env, 'run', { command: cmd, timeout: 90 }, 120, ctx);
       }
+      case 'generate_image': {
+        if (!env.AI) return { error: 'Image making is not switched on yet. Freedom needs to add the Workers AI binding (named AI) to the bridgette project in Cloudflare settings.' };
+        const prompt = String(args.prompt || '').slice(0, 2000);
+        if (!prompt.trim()) return { error: 'No image described.' };
+        if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
+        try {
+          const out = await env.AI.run('@cf/black-forest-labs/flux-1-schnell', { prompt });
+          const b64 = out && out.image ? out.image : null;
+          if (!b64) return { error: 'The image maker gave nothing back. Try describing it a bit differently.' };
+          const name = slug(prompt.slice(0, 40)) + '-' + Date.now().toString(36) + '.png';
+          await env.BRIDGETTE_KV.put('file:' + name, b64, { metadata: { type: 'png', created: new Date().toISOString() } });
+          return { saved: name, link: `${origin}/files/${name}`, note: 'Give Freedom this link — it opens the picture he can view, download, or drop onto a shirt in Printful/Printify.' };
+        } catch (e) { return { error: 'Image making failed: ' + (e.message || e) }; }
+      }
       case 'blender': {
         const script = String(args.script || '');
         if (!script.trim()) return { error: 'No Blender script given.' };
@@ -683,6 +700,12 @@ export default {
       const { value, metadata } = await env.BRIDGETTE_KV.getWithMetadata('file:' + name);
       if (value == null) return new Response('Not found', { status: 404 });
       const type = metadata?.type || name.split('.').pop();
+      if (type === 'png' || type === 'jpg' || type === 'jpeg' || type === 'webp') {
+        // Generated pictures are stored base64 — decode and serve as a real image.
+        const bin = atob(value); const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Response(bytes, { headers: { 'content-type': 'image/' + (type === 'jpg' ? 'jpeg' : type) } });
+      }
       if (type === 'docx') {
         // Clicking a document link opens Bridgette's document page; only the Download Word button (?dl=1) downloads.
         if (!url.searchParams.has('dl')) return Response.redirect(`${origin}/view/${encodeURIComponent(name)}`, 302);
