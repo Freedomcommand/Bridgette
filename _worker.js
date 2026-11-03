@@ -46,6 +46,13 @@ How you work:
 - Use generate_image to MAKE pictures and designs from words — clothing-print art for his INI line, logos, graphics. Describe it richly, then give him the link it returns. His brand symbol is a golden eagle with a FREEDOM banner. When an image includes people, make them Black / African-American so they look like Freedom and his family, unless he asks for someone different — write that into the prompt yourself.
 - You can SEE photos Freedom sends. When he attaches a picture, look at it and answer about what's actually in it. He can also attach text files; their contents are included in his message.
 - Designing in 3D: use the blender tool for anything 3D — modeling, products, home parts, moving parts, renders. Write a complete, self-contained Blender Python script (start with 'import bpy, os'); it runs on his PC. Always save a .blend to his Desktop, and when he wants to see it, also render a .png to his Desktop. For moving parts, set keyframes so it animates. After it runs, tell him exactly where the .blend and .png are so he can open them. If it says Blender wasn't found or the laptop isn't answering, tell him plainly.
+- Running his actual programs: use control_app to make Word, Excel, PowerPoint, and Outlook DO things on his PC through their built-in automation (COM), and to type or click into any program. Write a complete PowerShell script. Real recipes you can adapt:
+  * New Word doc, type, save: $w=New-Object -ComObject Word.Application; $w.Visible=$true; $d=$w.Documents.Add(); $w.Selection.TypeText("Hello Freedom"); $d.SaveAs2("$env:USERPROFILE\\Desktop\\letter.docx"); "saved".  (Open an existing one with $w.Documents.Open("C:\\full\\path.docx"). Print with $d.PrintOut(). Close with $d.Close(); $w.Quit().)
+  * Excel: $x=New-Object -ComObject Excel.Application; $x.Visible=$true; $wb=$x.Workbooks.Add(); $ws=$wb.Sheets.Item(1); $ws.Cells.Item(1,1).Value2="Name"; $ws.Cells.Item(1,2).Value2="Total"; $wb.SaveAs("$env:USERPROFILE\\Desktop\\sheet.xlsx"). (Open existing with $x.Workbooks.Open("C:\\path.xlsx").)
+  * Type into whatever window is in front: [System.Windows.Forms.SendKeys]::SendWait("some text{ENTER}").
+  * Start a program: Start-Process "notepad.exe" (or the app's path).
+- Seeing his screen: use see_screen to take a picture of his screen and get a link. Use it before clicking blind, or to check that something worked. Tell him the link so he sees it too.
+- ALWAYS ask first before you SEND an email, PRINT, or do anything that leaves the PC, costs money, or can't be undone — tell him exactly what you're about to do and wait for his "yes." When you finish with Word/Excel/etc., close it ($w.Quit()) unless he wants it left open on screen. Only say you did something if control_app actually ran and came back OK.
 
 Working on Freedom's laptop (Windows):
 - You can work on his laptop directly with laptop_run (PowerShell commands), laptop_read (open a file or list a folder) and laptop_write (make or change a file). Use them whenever he asks you to do something on his computer: find, open, make, move, rename, organize, clean up, check space, install, run programs.
@@ -87,6 +94,10 @@ const TOOLS = [
     parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file, e.g. ~/Desktop/resume.docx' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'blender', description: "Design in 3D with Blender on Freedom's PC (modeling, products, moving parts, renders). Give a COMPLETE Blender Python script (bpy); it runs on the PC in the background. Start with 'import bpy, os'. ALWAYS save the result: bpy.ops.wm.save_as_mainfile(filepath=os.path.expanduser('~/Desktop/<name>.blend')). When he should SEE it, also render a picture: set bpy.context.scene.render.filepath=os.path.expanduser('~/Desktop/<name>.png') then bpy.ops.render.render(write_still=True). For moving parts, keyframe with obj.keyframe_insert. Then tell Freedom exactly where you saved the .blend and .png so he can open them.",
     parameters: { type: 'object', properties: { script: { type: 'string', description: 'Full Blender bpy Python script' } }, required: ['script'] } } },
+  { type: 'function', function: { name: 'control_app', description: "Drive the actual programs on Freedom's Windows PC. Give a COMPLETE PowerShell script. Use this to open and run Word, Excel, PowerPoint, or Outlook and make them DO things (type text, format, insert, save, print, send email) through their built-in automation (COM); or to click, type keystrokes, or take a screenshot of whatever is on his screen. System.Windows.Forms, System.Drawing and Microsoft.VisualBasic are already loaded. Report back exactly what you did and where anything was saved.",
+    parameters: { type: 'object', properties: { script: { type: 'string', description: 'Full PowerShell script that drives the app(s)' } }, required: ['script'] } } },
+  { type: 'function', function: { name: 'see_screen', description: "Take a picture of Freedom's PC screen and look at it, so you can see what's on screen before you click or to check what happened. Returns a link to the screenshot. Also saves it to his Desktop as bridgette_screen.png.",
+    parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'generate_image', description: "Make a picture/design from a text description — artwork, logos, clothing-print designs for his INI line, graphics. Describe it richly (subject, style, colors, background). Returns a link to the picture; give Freedom that link. For his clothing, remember his symbol is a golden eagle with a FREEDOM banner when he wants it.",
     parameters: { type: 'object', properties: { prompt: { type: 'string', description: 'Rich description of the picture to make' } }, required: ['prompt'] } } },
   { type: 'function', function: { name: 'draw_floor_plan', description: 'Draw a blueprint-style floor plan. Rooms are rectangles in feet; x,y is the top-left corner. Doors/windows optional.',
@@ -438,6 +449,39 @@ async function runTool(name, args, env, origin, ctx = {}) {
         const cmd = "$ErrorActionPreference='Continue'; $b = Get-ChildItem 'C:\\Program Files\\Blender Foundation','C:\\Program Files (x86)\\Blender Foundation' -Filter blender.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; if (-not $b) { 'ERROR: Blender was not found on this PC.' } else { & $b --background --python \"$env:USERPROFILE\\BridgetteLink\\blender_job.py\" 2>&1 }";
         return await laptopCall(env, 'run', { command: cmd, timeout: 220 }, 240, ctx);
       }
+      case 'control_app': {
+        const script = String(args.script || '');
+        if (!script.trim()) return { error: 'No script given for control_app.' };
+        const pre = "Add-Type -AssemblyName System.Windows.Forms,System.Drawing,Microsoft.VisualBasic -ErrorAction SilentlyContinue; $ErrorActionPreference='Continue'; ";
+        return await laptopCall(env, 'run', { command: pre + script, timeout: 220 }, 240, ctx);
+      }
+      case 'see_screen': {
+        // PC grabs the screen, shrinks it to a small JPEG, and uploads it straight to Bridgette
+        // (its own POST, so it isn't limited by the job-result size cap).
+        if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
+        const name = 'screen-' + Date.now().toString(36) + '.jpg';
+        const cap = "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; "
+          + "$b=[System.Windows.Forms.SystemInformation]::VirtualScreen; "
+          + "$full=New-Object System.Drawing.Bitmap $b.Width,$b.Height; "
+          + "$g=[System.Drawing.Graphics]::FromImage($full); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); "
+          + "$full.Save(\"$env:USERPROFILE\\Desktop\\bridgette_screen.png\"); "
+          + "$tw=1280; if($b.Width -lt $tw){$tw=$b.Width}; $th=[int]($b.Height*$tw/$b.Width); "
+          + "$small=New-Object System.Drawing.Bitmap $tw,$th; $g2=[System.Drawing.Graphics]::FromImage($small); "
+          + "$g2.InterpolationMode='HighQualityBicubic'; $g2.DrawImage($full,0,0,$tw,$th); "
+          + "$ms=New-Object System.IO.MemoryStream; "
+          + "$enc=[System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders()|?{$_.MimeType -eq 'image/jpeg'}; "
+          + "$pm=New-Object System.Drawing.Imaging.EncoderParameters 1; "
+          + "$pm.Param[0]=New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality),([long]55); "
+          + "$small.Save($ms,$enc,$pm); $data=[Convert]::ToBase64String($ms.ToArray()); "
+          + "$key=(Get-Content \"$env:USERPROFILE\\BridgetteLink\\key.txt\" -Raw).Trim(); "
+          + "$body=@{name='" + name + "';type='jpg';b64=$data}|ConvertTo-Json -Compress; "
+          + "try{Invoke-RestMethod -Method Post -Uri 'https://bridgette.pages.dev/api/laptop/upload' -Headers @{'x-laptop-key'=$key} -ContentType 'application/json' -Body $body -TimeoutSec 30 | Out-Null; 'OK'}catch{'UPLOAD-FAIL: '+$_}";
+        const r = await laptopCall(env, 'run', { command: cap, timeout: 90 }, 120, ctx);
+        if (r && r.error) return r;
+        const out = String((r && r.output) || '').trim();
+        if (!/OK/.test(out) || /FAIL/.test(out)) return { error: 'Could not grab the screen — the PC may be locked, asleep, or offline. (' + out.slice(0, 200) + ')' };
+        return { saved: name, link: `${origin}/files/${name}`, note: 'Screenshot taken. It is also on his Desktop as bridgette_screen.png. Give Freedom this link so he can see it, then use control_app to act on what is on screen.' };
+      }
       case 'draw_floor_plan': {
         const svg = floorPlanSvg(args);
         return await storeFile(env, origin, args.title || 'floor-plan', 'svg', svg);
@@ -625,6 +669,19 @@ export default {
       const b = await req.json().catch(() => ({}));
       if (!b.id) return json({ error: 'No job id.' }, 400);
       await env.BRIDGETTE_KV.put('result:' + b.id, JSON.stringify({ result: b.result ?? {} }), { expirationTtl: 300 });
+      return json({ ok: true });
+    }
+
+    // The laptop uploads a file (e.g. a screenshot) straight to Bridgette's storage.
+    if (url.pathname === '/api/laptop/upload' && req.method === 'POST') {
+      if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
+      const L = await env.BRIDGETTE_KV.get('laptop', 'json');
+      if (!L || req.headers.get('x-laptop-key') !== L.key) return json({ error: 'Wrong key.' }, 401);
+      const b = await req.json().catch(() => ({}));
+      const name = String(b.name || '').replace(/[^a-z0-9._-]/gi, '').slice(0, 80);
+      const type = String(b.type || 'jpg').replace(/[^a-z0-9]/gi, '').slice(0, 5);
+      if (!name || !b.b64) return json({ error: 'Missing name or data.' }, 400);
+      await env.BRIDGETTE_KV.put('file:' + name, String(b.b64), { metadata: { type, created: new Date().toISOString() } });
       return json({ ok: true });
     }
 
