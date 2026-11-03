@@ -161,20 +161,43 @@ function newId() { return Date.now().toString(36) + Math.random().toString(36).s
 let chatId = store.get('bridgette.chatId', '');
 if (!chatId) { chatId = newId(); store.set('bridgette.chatId', chatId); }
 
-// Save the current conversation to Bridgette's cloud storage so it's there on any device.
+// A chat's title is its first thing Freedom said.
+function chatTitleOf(msgs) {
+  const u = (msgs || []).find((m) => m.role === 'user');
+  let t = u ? u.content : 'Chat';
+  if (Array.isArray(t)) t = '[photo]';
+  return String(t || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';
+}
+// A copy of every chat is kept right on this device too, so History always works
+// even when Bridgette's cloud list is slow to catch up.
+function localChats() { return store.get('bridgette.chatIndex', []); }
+function localChatSave(id, msgs) {
+  const light = (msgs || []).map(lightenMsg);
+  store.set('bridgette.chat.' + id, light);
+  const idx = localChats().filter((c) => c.id !== id);
+  idx.unshift({ id, title: chatTitleOf(light), updated: Date.now() });
+  store.set('bridgette.chatIndex', idx.slice(0, 80));
+}
+function localChatGet(id) { return store.get('bridgette.chat.' + id, null); }
+
+// Save the current conversation — on this device right away, and to Bridgette's cloud so it's on any device.
 async function saveChat() {
   if (!history.length) return;
+  localChatSave(chatId, history);
   try {
     await fetch('/api/chats', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridgette-key': key },
-      body: JSON.stringify({ id: chatId, messages: history, title: (history.find((m) => m.role === 'user') || {}).content }) });
+      body: JSON.stringify({ id: chatId, messages: history, title: chatTitleOf(history) }) });
   } catch (e) {}
 }
 async function openChat(id) {
+  let msgs = null;
   try {
     const r = await fetch('/api/chats/' + encodeURIComponent(id), { headers: { 'x-bridgette-key': key } });
-    const j = await r.json();
-    if (j.messages) { await saveChat(); chatId = id; store.set('bridgette.chatId', chatId); history = j.messages; saveLocal(); render(); $('history').style.display = 'none'; }
+    if (r.ok) { const j = await r.json(); if (j.messages) msgs = j.messages; }
   } catch (e) {}
+  if (!msgs) msgs = localChatGet(id);
+  if (!msgs) { $('histList').textContent = 'That chat is still saving — give it a moment and tap it again.'; return; }
+  await saveChat(); chatId = id; store.set('bridgette.chatId', chatId); history = msgs; saveLocal(); render(); $('history').style.display = 'none';
 }
 
 // Pick a female voice for read-aloud (names vary by device, so match known female ones and avoid male ones).
@@ -261,20 +284,22 @@ $('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.s
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
 $('histBtn').onclick = async () => {
   $('history').style.display = 'flex'; $('histList').textContent = 'Loading…';
-  try {
-    const r = await fetch('/api/chats', { headers: { 'x-bridgette-key': key } });
-    const j = await r.json();
-    const chats = j.chats || [];
-    if (!chats.length) { $('histList').innerHTML = '<p style="color:var(--muted);padding:16px">No saved chats yet.</p>'; return; }
-    $('histList').innerHTML = '';
-    for (const c of chats) {
-      const row = document.createElement('div'); row.className = 'histrow';
-      const t = document.createElement('span'); t.className = 'htitle'; t.textContent = c.title || 'Chat';
-      const w = document.createElement('span'); w.className = 'hwhen'; w.textContent = c.updated ? new Date(c.updated).toLocaleString() : '';
-      row.appendChild(t); row.appendChild(w); row.onclick = () => openChat(c.id);
-      $('histList').appendChild(row);
-    }
-  } catch (e) { $('histList').textContent = 'Could not load history.'; }
+  let server = [];
+  try { const r = await fetch('/api/chats', { headers: { 'x-bridgette-key': key } }); const j = await r.json(); server = j.chats || []; } catch (e) {}
+  // Merge what's on this device with what's in the cloud (newest wins), so nothing goes missing.
+  const byId = {};
+  for (const c of localChats()) byId[c.id] = { id: c.id, title: c.title || 'Chat', updated: c.updated || 0 };
+  for (const c of server) { const ex = byId[c.id]; if (!ex || (c.updated || 0) >= (ex.updated || 0)) byId[c.id] = { id: c.id, title: c.title || (ex && ex.title) || 'Chat', updated: c.updated || (ex && ex.updated) || 0 }; }
+  const chats = Object.keys(byId).map((k) => byId[k]).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  if (!chats.length) { $('histList').innerHTML = '<p style="color:var(--muted);padding:16px">No saved chats yet.</p>'; return; }
+  $('histList').innerHTML = '';
+  for (const c of chats) {
+    const row = document.createElement('div'); row.className = 'histrow';
+    const t = document.createElement('span'); t.className = 'htitle'; t.textContent = c.title || 'Chat';
+    const w = document.createElement('span'); w.className = 'hwhen'; w.textContent = c.updated ? new Date(c.updated).toLocaleString() : '';
+    row.appendChild(t); row.appendChild(w); row.onclick = () => openChat(c.id);
+    $('histList').appendChild(row);
+  }
 };
 $('speakToggle').onclick = () => { speak = !speak; store.set('bridgette.speak', speak); updateSpeakBtn(); if (!speak && 'speechSynthesis' in window) { speechSynthesis.cancel(); try { window.bridgetteAvatar && window.bridgetteAvatar.stopTalking(); } catch (e) {} } };
 $('attach').onclick = () => $('file').click();
