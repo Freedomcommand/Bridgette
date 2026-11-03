@@ -425,8 +425,6 @@ $('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passGo'
     // fuller lower cheeks / jaw
     var jaw = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 36), skin);
     jaw.scale.set(0.98, 0.72, 0.9); jaw.position.set(0, -0.52, 0.05); head.add(jaw);
-    var cheekL = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 24), skin); cheekL.position.set(-0.56, -0.18, 0.66); head.add(cheekL);
-    var cheekR = cheekL.clone(); cheekR.position.x = 0.56; head.add(cheekR);
     // nose
     var nose = new THREE.Mesh(new THREE.SphereGeometry(0.2, 20, 20), skin);
     nose.scale.set(0.9, 1.1, 0.9); nose.position.set(0, -0.12, 1.0); head.add(nose);
@@ -445,7 +443,7 @@ $('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passGo'
       var th = Math.acos(2*u - 1), ph = 2*Math.PI*v;
       var dx = Math.sin(th)*Math.cos(ph), dy = Math.cos(th), dz = Math.sin(th)*Math.sin(ph);
       if (dy < -0.5) continue;                                   // no hair under the chin
-      if (dz > 0.32 && dy > -0.38 && dy < 0.5) continue;         // leave the face open
+      if (dz > 0.2 && dy < 0.55) continue;                       // keep the whole front of the face clear (forehead down to chin)
       var r = Math.random();
       var mat = r < 0.7 ? hairBlack : (r < 0.92 ? hairGray : hairSilver);
       var puff = new THREE.Mesh(puffGeo, mat);
