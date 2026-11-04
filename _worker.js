@@ -305,18 +305,24 @@ async function laptopCall(env, kind, payload, waitSec = 120, ctx = {}) {
   if (!ctx.laptopOk) return { error: 'This device does not have the laptop code yet. Tell Freedom: tap the 💻 Laptop button at the top of Bridgette and type the laptop code (it was shown when he set up Bridgette Link). Then ask again.' };
   if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-  await env.BRIDGETTE_KV.put('job:' + id, JSON.stringify({ id, kind, payload, created: Date.now() }), { expirationTtl: 300 });
+  // Put the job into a single shared queue (one small read + write) instead of its own key,
+  // so the laptop's constant check-ins don't burn through the free daily "list" allowance.
+  const q0 = (await env.BRIDGETTE_KV.get('jobq', 'json')) || [];
+  q0.push({ id, kind, payload, created: Date.now() });
+  await env.BRIDGETTE_KV.put('jobq', JSON.stringify(q0), { expirationTtl: 600 });
   const deadline = Date.now() + waitSec * 1000;
-  let waited = false;
   while (Date.now() < deadline) {
-    await new Promise((res) => setTimeout(res, 1500));
+    await new Promise((res) => setTimeout(res, 1800));
     const done = await env.BRIDGETTE_KV.get('result:' + id, 'json');
     if (done) { await env.BRIDGETTE_KV.delete('result:' + id); return done.result; }
-    const stillThere = await env.BRIDGETTE_KV.get('job:' + id);
-    if (stillThere) waited = true; // laptop hasn't grabbed it yet
   }
-  await env.BRIDGETTE_KV.delete('job:' + id);
-  if (waited) return { error: `The laptop (${L.computer}) is not answering right now — it is probably off, asleep, offline, or Bridgette Link is not running. Try again when it is awake.` };
+  // Timed out: is our job still sitting in the queue (laptop never grabbed it), or was it taken?
+  const qEnd = (await env.BRIDGETTE_KV.get('jobq', 'json')) || [];
+  const stillWaiting = qEnd.some((j) => j.id === id);
+  if (stillWaiting) {
+    await env.BRIDGETTE_KV.put('jobq', JSON.stringify(qEnd.filter((j) => j.id !== id)), { expirationTtl: 600 });
+    return { error: `The laptop (${L.computer}) is not answering right now — it is probably off, asleep, offline, or Bridgette Link is not running. Try again when it is awake.` };
+  }
   return { error: `The laptop (${L.computer}) picked up the job but did not finish in time (${waitSec}s).` };
 }
 
@@ -647,17 +653,16 @@ export default {
       if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
       const L = await env.BRIDGETTE_KV.get('laptop', 'json');
       if (!L || req.headers.get('x-laptop-key') !== L.key) return json({ error: 'Wrong key.' }, 401);
-      // Long-poll: wait up to ~20s for a job so work starts quickly without hammering.
+      // Long-poll: wait up to ~20s for a job. Just read one small queue key (cheap) — no list scan.
       const stop = Date.now() + 20000;
       do {
-        const list = await env.BRIDGETTE_KV.list({ prefix: 'job:' });
-        if (list.keys.length) {
-          const jobs = (await Promise.all(list.keys.map((k) => env.BRIDGETTE_KV.get(k.name, 'json')))).filter(Boolean).sort((a, b2) => a.created - b2.created);
-          const job = jobs[0];
-          await env.BRIDGETTE_KV.delete('job:' + job.id); // taken — only one laptop runs it
+        const q = await env.BRIDGETTE_KV.get('jobq', 'json');
+        if (q && q.length) {
+          const job = q.shift(); // oldest first
+          await env.BRIDGETTE_KV.put('jobq', JSON.stringify(q), { expirationTtl: 600 }); // put the rest back
           return json({ job });
         }
-        if (Date.now() < stop) await new Promise((res) => setTimeout(res, 2000));
+        if (Date.now() < stop) await new Promise((res) => setTimeout(res, 3000));
       } while (Date.now() < stop);
       return json({ none: true });
     }
