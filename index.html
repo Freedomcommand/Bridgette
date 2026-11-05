@@ -67,6 +67,7 @@
     <button id="photoBtn" title="Send a photo straight from your pictures">📷 Photo</button>
     <button id="brainBtn" title="Switch which AI she uses">🧠 AIs</button>
     <button id="histBtn" title="Past chats">🕘 History</button>
+    <button id="refreshBtn" title="Refresh Bridgette">🔄 Refresh</button>
     <button id="newChat">New chat</button>
   </header>
   <div id="avatarWrap"><canvas id="avatar"></canvas></div>
@@ -283,6 +284,7 @@ async function send(text) {
 $('f').addEventListener('submit', (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; stopMic(); send(v); });
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
 $('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.set('bridgette.chatId', chatId); history = []; saveLocal(); render(); };
+$('refreshBtn').onclick = () => location.reload();
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
 $('histBtn').onclick = async () => {
   $('history').style.display = 'flex'; $('histList').textContent = 'Loading…';
