@@ -64,6 +64,7 @@
     <button id="laptopBtn" title="Let this device use the laptop">💻 Laptop</button>
     <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
     <button id="faceToggle" title="Show or hide Bridgette's face">👩 Face</button>
+    <button id="photoBtn" title="Send a photo straight from your pictures">📷 Photo</button>
     <button id="brainBtn" title="Switch which AI she uses">🧠 AIs</button>
     <button id="histBtn" title="Past chats">🕘 History</button>
     <button id="newChat">New chat</button>
@@ -74,6 +75,7 @@
   <form id="f">
     <button type="button" class="btn" id="attach" title="Add a photo or file">📎</button>
     <input type="file" id="file" multiple style="display:none">
+    <input type="file" id="photo" accept="image/*" multiple style="display:none">
     <button type="button" class="btn" id="mic" title="Talk">🎤</button>
     <textarea id="q" rows="2" placeholder="Tap 🎤 to talk (tap again to stop), then press Send…"></textarea>
     <button class="btn" id="send">Send</button>
@@ -312,6 +314,9 @@ $('file').onchange = async (e) => {
   }
   renderPending(); e.target.value = '';
 };
+// Direct photo button: filters to pictures (opens the gallery straight away on a tablet/phone).
+$('photoBtn').onclick = () => $('photo').click();
+$('photo').onchange = $('file').onchange;
 
 // voice input
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
