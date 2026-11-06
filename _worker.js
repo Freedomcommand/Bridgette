@@ -521,6 +521,27 @@ function orderBrains(brains, prefs) {
   return list;
 }
 
+// Pick the best brain for the kind of task, from the ones that are actually turned on.
+// Returns a brain NAME to try first, or null to keep the normal order.
+function routeBrain(text, brains) {
+  const names = brains.map((b) => b.name);
+  const pick = (ranked) => ranked.find((n) => names.includes(n)) || null;
+  const t = (text || '').toLowerCase();
+  // Blueprints, 3D, design, the estate/tower layouts → the most expert + image-capable brain
+  if (/\b(blueprint|floor ?plan|floorplan|architect|architectur|estate|house|building|3d|blender|render|cad|grid|layout|design|solidif|model|elevation|draft|room|wall)\b/.test(t))
+    return pick(['Gemini', 'OpenRouter', 'Cerebras', 'GitHub', 'Groq', 'Mistral']);
+  // Writing or running code
+  if (/\b(code|coding|script|program|function|debug|bug|python|javascript|html|css|api|worker)\b/.test(t))
+    return pick(['Groq', 'Cerebras', 'OpenRouter', 'GitHub', 'Gemini', 'Mistral']);
+  // Hard thinking: math, analysis, planning, money
+  if (/\b(calculate|math|analy|reason|strateg|plan|figure out|solve|logic|compare|budget|cost|tax|how much)\b/.test(t))
+    return pick(['OpenRouter', 'Cerebras', 'Gemini', 'GitHub', 'Groq']);
+  // Quick little stuff → the fast, light brain
+  if (t.length < 60)
+    return pick(['GeminiLite', 'Groq', 'Gemini']);
+  return null;
+}
+
 async function askBrains(env, messages, skip, prefs, requireVision) {
   let brains = orderBrains(brainsFor(env), prefs);
   if (requireVision) {
@@ -572,8 +593,17 @@ async function chat(env, origin, history, ctx = {}) {
   let used = '';
   // If Freedom sent a photo, she must use an image-capable brain.
   const needVision = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p && p.type === 'image_url'));
+  // Auto-pick the best brain for this task, unless Freedom manually chose one.
+  let prefs = ctx.brainPref || null;
+  if (!(prefs && prefs.preferred)) {
+    const lu = [...history].reverse().find((m) => m.role === 'user');
+    const lt = lu ? (typeof lu.content === 'string' ? lu.content
+      : Array.isArray(lu.content) ? lu.content.map((p) => p && p.text).filter(Boolean).join(' ') : '') : '';
+    const auto = routeBrain(lt, brainsFor(env));
+    if (auto) prefs = { ...(prefs || {}), preferred: auto };
+  }
   for (let step = 0; step < MAX_STEPS; step++) {
-    const { brain, msg } = await askBrains(env, messages, skip, ctx.brainPref, needVision);
+    const { brain, msg } = await askBrains(env, messages, skip, prefs, needVision);
     used = brain;
     const calls = msg.tool_calls || [];
     if (!calls.length) return { reply: msg.content || '', brain: used, steps };
@@ -587,7 +617,7 @@ async function chat(env, origin, history, ctx = {}) {
     }
   }
   messages.push({ role: 'user', content: 'Stop using tools now and give Freedom your answer with what you have.' });
-  const { brain, msg } = await askBrains(env, messages.map((m) => m), skip, ctx.brainPref, needVision);
+  const { brain, msg } = await askBrains(env, messages.map((m) => m), skip, prefs, needVision);
   return { reply: msg.content || '(no answer)', brain, steps };
 }
 
