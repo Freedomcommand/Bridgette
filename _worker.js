@@ -453,7 +453,12 @@ async function runTool(name, args, env, origin, ctx = {}) {
         if (!script.trim()) return { error: 'No Blender script given.' };
         const w = await laptopCall(env, 'write', { path: '~/BridgetteLink/blender_job.py', content: script }, 90, ctx);
         if (w && w.error) return w;
-        const cmd = "$ErrorActionPreference='Continue'; $b = Get-ChildItem 'C:\\Program Files\\Blender Foundation','C:\\Program Files (x86)\\Blender Foundation' -Filter blender.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; if (-not $b) { 'ERROR: Blender was not found on this PC.' } else { & $b --background --python \"$env:USERPROFILE\\BridgetteLink\\blender_job.py\" 2>&1 }";
+        const cmd = "$ErrorActionPreference='SilentlyContinue'; "
+          + "$b = (Get-Command blender.exe -ErrorAction SilentlyContinue).Source; "
+          + "if (-not $b) { $b = (where.exe blender 2>$null | Select-Object -First 1) }; "
+          + "if (-not $b) { foreach ($r in @(\"$env:ProgramFiles\\Blender Foundation\", \"${env:ProgramFiles(x86)}\\Blender Foundation\", \"${env:ProgramFiles(x86)}\\Steam\\steamapps\\common\\Blender\", \"$env:LOCALAPPDATA\\Programs\\Blender Foundation\", \"$env:ProgramFiles\\WindowsApps\")) { $f = Get-ChildItem $r -Filter blender.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName; if ($f) { $b = $f; break } } }; "
+          + "if (-not $b) { 'ERROR: Blender was not found. Ask Freedom for the folder where Blender is installed (right-click its shortcut > Open file location), or it may be a Microsoft Store version I cannot reach from here.' } "
+          + "else { Write-Output (\"Using Blender at: \" + $b); & \"$b\" --background --python \"$env:USERPROFILE\\BridgetteLink\\blender_job.py\" 2>&1 }";
         return await laptopCall(env, 'run', { command: cmd, timeout: 220 }, 240, ctx);
       }
       case 'control_app': {
