@@ -24,8 +24,13 @@ function Expand-PathText([string]$p) {
   if (-not $p) { return $env:USERPROFILE }
   $p = [Environment]::ExpandEnvironmentVariables($p.Trim().Trim('"'))
   if ($p -eq '~') { return $env:USERPROFILE }
-  if ($p.StartsWith('~\') -or $p.StartsWith('~/')) { $p = Join-Path $env:USERPROFILE $p.Substring(2) }
-  if (-not [IO.Path]::IsPathRooted($p)) { $p = Join-Path $env:USERPROFILE $p }
+  if ($p.StartsWith('~\') -or $p.StartsWith('~/')) { $p = $p.Substring(2) }
+  if (-not [IO.Path]::IsPathRooted($p)) {
+    # Send Desktop/Documents to their REAL location, so a OneDrive-redirected Desktop still gets the file where Freedom sees it.
+    if ($p -ieq 'Desktop' -or $p -imatch '^Desktop[\\/]')     { return (Join-Path ([Environment]::GetFolderPath('Desktop'))     ($p.Substring(7).TrimStart('\','/'))) }
+    if ($p -ieq 'Documents' -or $p -imatch '^Documents[\\/]') { return (Join-Path ([Environment]::GetFolderPath('MyDocuments')) ($p.Substring(9).TrimStart('\','/'))) }
+    return (Join-Path $env:USERPROFILE $p)
+  }
   return $p
 }
 
