@@ -5,6 +5,9 @@
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# Only one copy runs at a time (the scheduled task may launch it again while it's already up).
+$global:BridgetteMutex = New-Object System.Threading.Mutex($false, 'Global\BridgetteLinkSingleton')
+try { if (-not $global:BridgetteMutex.WaitOne(0)) { exit } } catch {}
 $dir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $site = 'https://bridgette.pages.dev'
 $key  = (Get-Content (Join-Path $dir 'key.txt') -Raw).Trim()

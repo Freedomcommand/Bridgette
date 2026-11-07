@@ -33,16 +33,31 @@ if (-not (Test-Path $codeFile)) {
 }
 $code = (Get-Content $codeFile -Raw).Trim()
 
-# 4. Start with Windows (hidden)
+# 4. Keep it running — hidden, auto-start at login, auto-restart if it dies, re-checked every 5 min.
+#    (A Scheduled Task is far steadier than a startup window you have to keep open.)
 $linkArgs = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$dir\bridgette-link.ps1`""
-$ws = New-Object -ComObject WScript.Shell
-$lnk = $ws.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Startup')) 'Bridgette Link.lnk'))
-$lnk.TargetPath = 'powershell.exe'; $lnk.Arguments = $linkArgs; $lnk.WindowStyle = 7; $lnk.Save()
+Remove-Item (Join-Path ([Environment]::GetFolderPath('Startup')) 'Bridgette Link.lnk') -ErrorAction SilentlyContinue
+try {
+  $action  = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $linkArgs
+  $trigger = New-ScheduledTaskTrigger -AtLogOn
+  try { $trigger.Repetition = (New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5)).Repetition } catch {}
+  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1)
+  try { $settings.ExecutionTimeLimit = 'PT0S' } catch {}
+  Register-ScheduledTask -TaskName 'BridgetteLink' -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+  Say 'Set to auto-start and keep itself running (no window to babysit).' 'Green'
+} catch {
+  # Fallback: if the Scheduled Task can't be made, use the old startup shortcut so it still starts at login.
+  $ws = New-Object -ComObject WScript.Shell
+  $lnk = $ws.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Startup')) 'Bridgette Link.lnk'))
+  $lnk.TargetPath = 'powershell.exe'; $lnk.Arguments = $linkArgs; $lnk.WindowStyle = 7; $lnk.Save()
+  Say 'Set to auto-start at login.' 'Green'
+}
 
-# 5. Restart it now
+# 5. Stop any old copy and start it fresh now
 Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*bridgette-link.ps1*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Start-Process powershell.exe -ArgumentList $linkArgs -WindowStyle Hidden
+Start-Sleep -Milliseconds 600
+try { Start-ScheduledTask -TaskName 'BridgetteLink' -ErrorAction Stop } catch { Start-Process powershell.exe -ArgumentList $linkArgs -WindowStyle Hidden }
 
 # 6. Tell Bridgette this computer is hers to use
 try {
