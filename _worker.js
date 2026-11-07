@@ -51,7 +51,7 @@ How you work:
   * Excel: $x=New-Object -ComObject Excel.Application; $x.Visible=$true; $wb=$x.Workbooks.Add(); $ws=$wb.Sheets.Item(1); $ws.Cells.Item(1,1).Value2="Name"; $ws.Cells.Item(1,2).Value2="Total"; $wb.SaveAs("$env:USERPROFILE\\Desktop\\sheet.xlsx"). (Open existing with $x.Workbooks.Open("C:\\path.xlsx").)
   * Type into whatever window is in front: [System.Windows.Forms.SendKeys]::SendWait("some text{ENTER}").
   * Start a program: Start-Process "notepad.exe" (or the app's path).
-- Seeing his screen: use see_screen to take a picture of his screen and get a link. Use it before clicking blind, or to check that something worked. Tell him the link so he sees it too.
+- Seeing his screen: you CAN see Freedom's screen. When he asks what's on his screen, to look at something on it, or whether you can see what he sent, USE the see_screen tool — it takes a picture of his screen and then shows it to you so you can read it and tell him what's on it. NEVER tell him you can't see his screen; you have see_screen. You don't watch his screen non-stop — you take a look with see_screen when he asks or when you need to. (It needs his PC on with the laptop link; only if the tool itself says the laptop isn't connected do you tell him to turn on the laptop link / Bridgette Link.)
 - ALWAYS ask first before you SEND an email, PRINT, or do anything that leaves the PC, costs money, or can't be undone — tell him exactly what you're about to do and wait for his "yes." When you finish with Word/Excel/etc., close it ($w.Quit()) unless he wants it left open on screen. Only say you did something if control_app actually ran and came back OK.
 
 Working on Freedom's laptop (Windows):
@@ -592,7 +592,7 @@ async function chat(env, origin, history, ctx = {}) {
   const skip = new Set();
   let used = '';
   // If Freedom sent a photo, she must use an image-capable brain.
-  const needVision = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p && p.type === 'image_url'));
+  let needVision = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p && p.type === 'image_url'));
   // Auto-pick the best brain for this task, unless Freedom manually chose one.
   let prefs = ctx.brainPref || null;
   if (!(prefs && prefs.preferred)) {
@@ -608,12 +608,24 @@ async function chat(env, origin, history, ctx = {}) {
     const calls = msg.tool_calls || [];
     if (!calls.length) return { reply: msg.content || '', brain: used, steps };
     messages.push({ role: 'assistant', content: msg.content || '', tool_calls: calls });
+    const shots = [];
     for (const c of calls) {
       let args = {};
       try { args = JSON.parse(c.function.arguments || '{}'); } catch (e) { /* keep empty */ }
       const result = await runTool(c.function.name, args, env, origin, ctx);
       steps.push({ tool: c.function.name, args, result: summarize(result) });
       messages.push({ role: 'tool', tool_call_id: c.id, name: c.function.name, content: JSON.stringify(result).slice(0, 12000) });
+      // After a screenshot, feed the actual image back so she can SEE his screen, not just save it.
+      if (c.function.name === 'see_screen' && result && result.saved && env.BRIDGETTE_KV) {
+        try { const b64 = await env.BRIDGETTE_KV.get('file:' + result.saved); if (b64) shots.push('data:image/jpeg;base64,' + b64); } catch (e) {}
+      }
+    }
+    if (shots.length) {
+      messages.push({ role: 'user', content: [
+        { type: 'text', text: 'This is the screenshot of my screen you just took. Look at it and answer based on what you actually see on it.' },
+        ...shots.map((u) => ({ type: 'image_url', image_url: { url: u } })),
+      ] });
+      needVision = true; // next step must use an image-capable brain
     }
   }
   messages.push({ role: 'user', content: 'Stop using tools now and give Freedom your answer with what you have.' });
