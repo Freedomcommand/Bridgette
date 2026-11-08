@@ -776,7 +776,11 @@ export default {
       if (!id || !messages.length) return json({ error: 'Nothing to save.' }, 400);
       const firstUser = messages.find((m) => m.role === 'user');
       const title = String(b.title || (firstUser && firstUser.content) || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';
-      await env.BRIDGETTE_KV.put('chat:' + id, JSON.stringify({ messages }), { metadata: { title, updated: Date.now() } });
+      const body = JSON.stringify({ messages });
+      // If nothing changed, don't mark it as the newest chat (stops devices pulling up an old chat)
+      const prev = await env.BRIDGETTE_KV.get('chat:' + id);
+      if (prev === body) return json({ ok: true, unchanged: true });
+      await env.BRIDGETTE_KV.put('chat:' + id, body, { metadata: { title, updated: Date.now() } });
       return json({ ok: true });
     }
     if (url.pathname.startsWith('/api/chats/')) {
