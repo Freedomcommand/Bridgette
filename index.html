@@ -63,6 +63,7 @@
     <h1>Bridgette</h1>
     <button id="laptopBtn" title="Let this device use the laptop">💻 Laptop</button>
     <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
+    <button id="repeatBtn" title="Say the last answer again">🔁 Repeat</button>
     <button id="faceToggle" title="Show or hide Bridgette's face">👩 Face</button>
     <button id="photoBtn" title="Send a photo straight from your pictures">📷 Photo</button>
     <button id="brainBtn" title="Switch which AI she uses">🧠 AIs</button>
@@ -216,6 +217,15 @@ function pickFemaleVoice() {
   return pool.find((v) => !male.test(v.name)) || pool[0];
 }
 function loadVoice() { chosenVoice = pickFemaleVoice(); }
+// Read text out loud in her voice (used for new answers and the Repeat button)
+function sayOutLoud(text) {
+  if (!('speechSynthesis' in window) || !text) return;
+  const u = new SpeechSynthesisUtterance(String(text).replace(/https?:\/\/\S+/g, 'link'));
+  if (!chosenVoice) loadVoice(); if (chosenVoice) u.voice = chosenVoice;
+  u.onstart = () => { try { window.bridgetteAvatar && window.bridgetteAvatar.startTalking(); } catch (e) {} };
+  u.onend = () => { try { window.bridgetteAvatar && window.bridgetteAvatar.stopTalking(); } catch (e) {} };
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+}
 if ('speechSynthesis' in window) { loadVoice(); speechSynthesis.onvoiceschanged = loadVoice; }
 
 function linkify(text) {
@@ -273,7 +283,7 @@ async function send(text) {
     meta.textContent = 'brain: ' + j.brain + (j.steps && j.steps.length ? ' · used: ' + j.steps.map(s => s.tool).join(', ') : '');
     add('assistant', j.reply, meta);
     saveChat();
-    if (speak && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance(j.reply.replace(/https?:\/\/\S+/g, 'link')); if (!chosenVoice) loadVoice(); if (chosenVoice) u.voice = chosenVoice; u.onstart = () => { try { window.bridgetteAvatar && window.bridgetteAvatar.startTalking(); } catch (e) {} }; u.onend = () => { try { window.bridgetteAvatar && window.bridgetteAvatar.stopTalking(); } catch (e) {} }; speechSynthesis.cancel(); speechSynthesis.speak(u); }
+    if (speak) sayOutLoud(j.reply);
   } catch (e) {
     t.remove();
     const er = document.createElement('div'); er.className = 'err'; er.textContent = 'Could not reach Bridgette: ' + e.message; $('log').appendChild(er);
@@ -304,6 +314,10 @@ $('histBtn').onclick = async () => {
     row.appendChild(t); row.appendChild(w); row.onclick = () => openChat(c.id);
     $('histList').appendChild(row);
   }
+};
+$('repeatBtn').onclick = () => {
+  const last = [...history].reverse().find((m) => m.role === 'assistant' && typeof m.content === 'string');
+  sayOutLoud(last ? last.content : "Hi Freedom. I'm Bridgette. What are we doing today?");
 };
 $('speakToggle').onclick = () => { speak = !speak; store.set('bridgette.speak', speak); updateSpeakBtn(); if (!speak && 'speechSynthesis' in window) { speechSynthesis.cancel(); try { window.bridgetteAvatar && window.bridgetteAvatar.stopTalking(); } catch (e) {} } };
 $('attach').onclick = () => $('file').click();
@@ -391,8 +405,25 @@ $('passGo').onclick = async () => {
 };
 $('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passGo').click(); });
 
+// Pick up the most recent conversation from any device (phone, PC, tablet)
+async function syncLatestChat() {
+  try {
+    const r = await fetch('/api/chats', { headers: { 'x-bridgette-key': key } });
+    if (!r.ok) return;
+    const j = await r.json();
+    const top = j.chats && j.chats[0];
+    if (!top || top.id === chatId || $('send').disabled) return;
+    // Load it straight in (no re-save, so devices don't keep flipping each other's chats)
+    const c = await fetch('/api/chats/' + encodeURIComponent(top.id), { headers: { 'x-bridgette-key': key } });
+    if (!c.ok) return;
+    const v = await c.json();
+    if (!v.messages || !v.messages.length) return;
+    chatId = top.id; store.set('bridgette.chatId', chatId); history = v.messages; saveLocal(); render();
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncLatestChat(); });
 (async () => {
-  updateSpeakBtn(); render(); checkLaptop();
+  updateSpeakBtn(); render(); checkLaptop(); syncLatestChat();
   try { const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } }); if (r.status === 401) showLogin(); } catch (e) {}
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 })();
