@@ -303,7 +303,7 @@ $('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.s
 $('refreshBtn').onclick = () => location.reload();
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
 // Selfie Video: free talking/singing video from a photo (runs on a free Hugging Face tool)
-$('videoBtn').onclick = () => { window.open('https://www.hedra.com/app/characters', '_blank', 'noopener'); };
+$('videoBtn').onclick = () => { window.open('https://www.hedra.com', '_blank', 'noopener'); };
 $('svClose').onclick = () => { $('selfieVideo').style.display = 'none'; };
 $('histBtn').onclick = async () => {
   $('history').style.display = 'flex'; $('histList').textContent = 'Loading…';
