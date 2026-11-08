@@ -90,8 +90,8 @@
   <p style="color:var(--muted);padding:12px 16px;font-size:13px;margin:0">Star = try this one first. Switch off any you don't want her to use. She still auto-switches if one's busy.</p>
 </div></div>
 <div id="selfieVideo" style="position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;flex-direction:column;z-index:25;padding:10px">
-  <div class="sheetbar" style="background:var(--panel);border-radius:12px 12px 0 0"><b>🎬 Selfie Video — your photo + words or a song</b>
-    <span><a id="svOpen" href="https://lulavc-animastudio.hf.space" target="_blank" rel="noopener" style="color:var(--accent);margin-right:12px">Open full screen</a><button id="svClose">Close</button></span></div>
+  <div class="sheetbar" style="background:var(--panel);border-radius:12px 12px 0 0"><b>🎬 Selfie Video — your photo + a voice recording or song</b>
+    <span><a id="svOpen" href="https://shalomking-infinitetalk.hf.space" target="_blank" rel="noopener" style="color:var(--accent);margin-right:12px">Open full screen</a><button id="svClose">Close</button></span></div>
   <iframe id="svFrame" title="Selfie Video" allow="microphone; camera; clipboard-write" style="flex:1;width:100%;border:0;background:#fff;border-radius:0 0 12px 12px"></iframe>
 </div>
 <div id="history"><div class="sheet">
@@ -303,7 +303,7 @@ $('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.s
 $('refreshBtn').onclick = () => location.reload();
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
 // Selfie Video: free talking/singing video from a photo (runs on a free Hugging Face tool)
-$('videoBtn').onclick = () => { const f = $('svFrame'); if (!f.src) f.src = 'https://lulavc-animastudio.hf.space'; $('selfieVideo').style.display = 'flex'; };
+$('videoBtn').onclick = () => { const f = $('svFrame'); if (!f.src) f.src = 'https://shalomking-infinitetalk.hf.space'; $('selfieVideo').style.display = 'flex'; };
 $('svClose').onclick = () => { $('selfieVideo').style.display = 'none'; };
 $('histBtn').onclick = async () => {
   $('history').style.display = 'flex'; $('histList').textContent = 'Loading…';
