@@ -303,7 +303,7 @@ $('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.s
 $('refreshBtn').onclick = () => location.reload();
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
 // Selfie Video: free talking/singing video from a photo (runs on a free Hugging Face tool)
-$('videoBtn').onclick = () => { const f = $('svFrame'); if (!f.src) f.src = 'https://shalomking-infinitetalk.hf.space'; $('selfieVideo').style.display = 'flex'; };
+$('videoBtn').onclick = () => { window.open('https://www.hedra.com/app/characters', '_blank', 'noopener'); };
 $('svClose').onclick = () => { $('selfieVideo').style.display = 'none'; };
 $('histBtn').onclick = async () => {
   $('history').style.display = 'flex'; $('histList').textContent = 'Loading…';
