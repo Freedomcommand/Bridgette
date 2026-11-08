@@ -48,6 +48,7 @@
   .sheetbar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; position:sticky; top:0; background:var(--panel); border-bottom:1px solid #223a52; }
   .histrow { padding:12px 16px; border-bottom:1px solid #223a52; cursor:pointer; }
   .histrow:hover { background:#1c344c; }
+  .hrename { margin-top:6px; font-size:13px; padding:4px 10px; }
   .htitle { display:block; color:var(--text); font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .hwhen { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
   #avatarWrap { height:210px; background:radial-gradient(circle at 50% 38%, #27496a 0%, #12243a 68%); display:flex; align-items:center; justify-content:center; overflow:hidden; border-bottom:1px solid #223a52; }
@@ -185,7 +186,7 @@ function localChatSave(id, msgs) {
   const light = (msgs || []).map(lightenMsg);
   store.set('bridgette.chat.' + id, light);
   const idx = localChats().filter((c) => c.id !== id);
-  idx.unshift({ id, title: chatTitleOf(light), updated: Date.now() });
+  idx.unshift({ id, title: (store.get('bridgette.titles', {})[id]) || chatTitleOf(light), updated: Date.now() });
   store.set('bridgette.chatIndex', idx.slice(0, 80));
 }
 function localChatGet(id) { return store.get('bridgette.chat.' + id, null); }
@@ -313,6 +314,9 @@ $('histBtn').onclick = async () => {
   const byId = {};
   for (const c of localChats()) byId[c.id] = { id: c.id, title: c.title || 'Chat', updated: c.updated || 0 };
   for (const c of server) { const ex = byId[c.id]; if (!ex || (c.updated || 0) >= (ex.updated || 0)) byId[c.id] = { id: c.id, title: c.title || (ex && ex.title) || 'Chat', updated: c.updated || (ex && ex.updated) || 0 }; }
+  const myNames = store.get('bridgette.titles', {});
+  for (const c of server) if (c.custom && byId[c.id]) byId[c.id].title = c.title;
+  for (const id in myNames) if (byId[id]) byId[id].title = myNames[id];
   const chats = Object.keys(byId).map((k) => byId[k]).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   if (!chats.length) { $('histList').innerHTML = '<p style="color:var(--muted);padding:16px">No saved chats yet.</p>'; return; }
   $('histList').innerHTML = '';
@@ -320,7 +324,18 @@ $('histBtn').onclick = async () => {
     const row = document.createElement('div'); row.className = 'histrow';
     const t = document.createElement('span'); t.className = 'htitle'; t.textContent = c.title || 'Chat';
     const w = document.createElement('span'); w.className = 'hwhen'; w.textContent = c.updated ? new Date(c.updated).toLocaleString() : '';
-    row.appendChild(t); row.appendChild(w); row.onclick = () => openChat(c.id);
+    const rn = document.createElement('button'); rn.textContent = '✏️ Rename'; rn.className = 'hrename';
+    rn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const name = prompt('New name for this chat:', t.textContent);
+      if (!name || !name.trim()) return;
+      const clean = name.trim().slice(0, 80);
+      const names = store.get('bridgette.titles', {}); names[c.id] = clean; store.set('bridgette.titles', names);
+      t.textContent = clean;
+      const idx = localChats(); const e = idx.find((x) => x.id === c.id); if (e) { e.title = clean; store.set('bridgette.chatIndex', idx); }
+      try { await fetch('/api/chats/' + encodeURIComponent(c.id), { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-bridgette-key': key }, body: JSON.stringify({ title: clean }) }); } catch (e) {}
+    };
+    row.appendChild(t); row.appendChild(w); row.appendChild(rn); row.onclick = () => openChat(c.id);
     $('histList').appendChild(row);
   }
 };

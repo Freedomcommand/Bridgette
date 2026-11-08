@@ -757,7 +757,7 @@ export default {
       if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
       if (!env.BRIDGETTE_KV) return json({ chats: [] });
       const l = await env.BRIDGETTE_KV.list({ prefix: 'chat:' });
-      const chats = l.keys.map((k) => ({ id: k.name.slice(5), title: (k.metadata && k.metadata.title) || 'Chat', updated: (k.metadata && k.metadata.updated) || 0 }))
+      const chats = l.keys.map((k) => ({ id: k.name.slice(5), title: (k.metadata && k.metadata.title) || 'Chat', custom: !!(k.metadata && k.metadata.custom), updated: (k.metadata && k.metadata.updated) || 0 }))
         .sort((a, b) => (b.updated || 0) - (a.updated || 0));
       return json({ chats });
     }
@@ -778,9 +778,12 @@ export default {
       const title = String(b.title || (firstUser && firstUser.content) || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';
       const body = JSON.stringify({ messages });
       // If nothing changed, don't mark it as the newest chat (stops devices pulling up an old chat)
-      const prev = await env.BRIDGETTE_KV.get('chat:' + id);
-      if (prev === body) return json({ ok: true, unchanged: true });
-      await env.BRIDGETTE_KV.put('chat:' + id, body, { metadata: { title, updated: Date.now() } });
+      const prevRec = await env.BRIDGETTE_KV.getWithMetadata('chat:' + id);
+      if (prevRec.value === body) return json({ ok: true, unchanged: true });
+      const pm = prevRec.metadata || {};
+      // Keep a name Freedom gave the chat himself
+      const keepTitle = pm.custom ? pm.title : title;
+      await env.BRIDGETTE_KV.put('chat:' + id, body, { metadata: { title: keepTitle, custom: !!pm.custom, updated: Date.now() } });
       return json({ ok: true });
     }
     if (url.pathname.startsWith('/api/chats/')) {
@@ -789,6 +792,16 @@ export default {
       const id = decodeURIComponent(url.pathname.slice('/api/chats/'.length));
       if (!id) return json({ error: 'No chat id.' }, 400);
       if (req.method === 'DELETE') { await env.BRIDGETTE_KV.delete('chat:' + id); return json({ ok: true }); }
+      if (req.method === 'PATCH') {
+        // Rename a chat (keeps its place in the list)
+        const b = await req.json().catch(() => ({}));
+        const newTitle = String(b.title || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+        if (!newTitle) return json({ error: 'No name given.' }, 400);
+        const rec = await env.BRIDGETTE_KV.getWithMetadata('chat:' + id);
+        if (rec.value == null) return json({ error: 'Not found' }, 404);
+        await env.BRIDGETTE_KV.put('chat:' + id, rec.value, { metadata: { ...(rec.metadata || {}), title: newTitle, custom: true } });
+        return json({ ok: true });
+      }
       const v = await env.BRIDGETTE_KV.get('chat:' + id, 'json');
       if (!v) return json({ error: 'Not found' }, 404);
       return json({ id, messages: v.messages || [] });
