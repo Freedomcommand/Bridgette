@@ -63,6 +63,7 @@
     <img src="/icon-192.png" alt="">
     <h1>Bridgette</h1>
     <button id="laptopBtn" title="Let this device use the laptop">💻 Laptop</button>
+    <button id="gmailBtn" title="Connect Gmail">✉️ Gmail</button>
     <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
     <button id="repeatBtn" title="Say the last answer again">🔁 Repeat</button>
     <button id="faceToggle" title="Show or hide Bridgette's face">👩 Face</button>
@@ -339,6 +340,19 @@ $('histBtn').onclick = async () => {
     $('histList').appendChild(row);
   }
 };
+// Gmail: connect (or show it's connected)
+async function gmailStatus() {
+  try { const r = await fetch('/api/gmail/status', { headers: { 'x-bridgette-key': key } }); const j = await r.json(); $('gmailBtn').textContent = j.connected ? '✉️ Gmail ✓' : '✉️ Gmail'; return j; } catch (e) { return {}; }
+}
+$('gmailBtn').onclick = async () => {
+  const st = await gmailStatus();
+  if (st.connected && !confirm('Gmail is already connected. Connect again?')) return;
+  try {
+    const r = await fetch('/api/gmail/start', { headers: { 'x-bridgette-key': key } }); const j = await r.json();
+    if (j.url) location.href = j.url; else alert(j.error || 'Could not start Gmail sign-in.');
+  } catch (e) { alert('Could not reach Bridgette.'); }
+};
+gmailStatus();
 $('repeatBtn').onclick = () => {
   const last = [...history].reverse().find((m) => m.role === 'assistant' && typeof m.content === 'string');
   sayOutLoud(last ? last.content : "Hi Freedom. I'm Bridgette. What are we doing today?");

@@ -36,7 +36,8 @@ How you work:
 - Speak plainly and straight. Short answers unless he asks for more. Be honest about mistakes and limits.
 - HONESTY IS CRITICAL. Never claim you did something unless you actually used a tool this turn and have a real result or working link to show. If you only imagined or described it, say so plainly: "I can't actually do that yet."
 - NEVER tell Freedom you created, saved, built, or rendered a file unless the tool THIS TURN came back with real success and the actual path. If a tool fails or the laptop link is offline, say so plainly and briefly as a simple fact — for example: "That didn't work — the laptop link is offline right now, so I couldn't run it." Stay CALM and matter-of-fact: do NOT dramatize it, do not apologize over and over, and do not call yourself a liar — one hiccup is not a lie. Just never invent a success or a file path that isn't real. And if an EARLIER step really did succeed (a file that already saved), that still stands even if a later step fails — don't take back a real success just because the connection dropped afterward.
-- You CANNOT build or host websites or online stores, log into his accounts (Amazon, Square, PayPal, email), set up payments, or post to social media. You have NO tool for those. If he asks, tell him straight that you can't do it, and point him to the real way (for a store: Square's free online store).
+- EMAIL: you CAN work in Freedom's Gmail with your gmail_ tools (search, read, draft, clean up, block senders, find unsubscribe links, send). Never send an email unless he clearly says to send it — show him the full email first. Before trashing a big batch, tell him how many.
+- You CANNOT build or host websites or online stores, log into his other accounts (Amazon, Square, PayPal), set up payments, or post to social media. You have NO tool for those. If he asks, tell him straight that you can't do it, and point him to the real way (for a store: Square's free online store).
 - Do not exaggerate or invent abilities. When you are unsure or can't do something, say so directly. One small honest answer beats a big made-up one. Freedom is trusting you to be truthful.
 - FIXING CODE (his, or your own) — you MUST TEST it before you ever call it done or deploy it. Never change code and just hope. Rules: (1) have your STRONGEST code brain write the fix (DeepSeek through OpenRouter if it's available). (2) Check the new code actually parses/runs with no errors before it goes anywhere — if it won't even parse, it is NOT ready, fix it or stop. (3) Keep the previous WORKING version saved as a backup first, so a broken change can be put right back. (4) Never push or save a code change you have not tested. If you cannot test it, say so and do NOT deploy it. A change that breaks you is worse than no change — when in doubt, show Freedom the fix and ask before applying it.
 - When he dictates words to write, use his exact words.
@@ -111,6 +112,20 @@ const TOOLS = [
       doors: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, wall: { type: 'string', enum: ['horizontal', 'vertical'] } } } },
       windows: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, length: { type: 'number' }, wall: { type: 'string', enum: ['horizontal', 'vertical'] } } } },
     }, required: ['title', 'rooms'] } } },
+  { type: 'function', function: { name: 'gmail_search', description: "Search Freedom's Gmail (arthurfreedombates2026@gmail.com). Use Gmail search words, e.g. 'is:unread', 'from:amazon', 'newer_than:2d', 'category:promotions'. Returns id, from, subject, date, snippet for each email.",
+    parameters: { type: 'object', properties: { query: { type: 'string' }, max: { type: 'number', description: 'How many (default 10, up to 50)' } }, required: ['query'] } } },
+  { type: 'function', function: { name: 'gmail_read', description: 'Read the full text of one email by its id (from gmail_search).',
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } } },
+  { type: 'function', function: { name: 'gmail_send', description: "Send an email from Freedom's Gmail. ONLY when Freedom clearly tells you to send it. First show him the To, Subject and the full message and wait for him to say send.",
+    parameters: { type: 'object', properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } }, required: ['to', 'subject', 'body'] } } },
+  { type: 'function', function: { name: 'gmail_draft', description: "Save an email as a draft in Freedom's Gmail (not sent). Use this when he wants an email written up.",
+    parameters: { type: 'object', properties: { to: { type: 'string' }, subject: { type: 'string' }, body: { type: 'string' } }, required: ['subject', 'body'] } } },
+  { type: 'function', function: { name: 'gmail_clean', description: "Act on emails by id: 'trash' (moves to Trash, recoverable 30 days), 'spam' (report spam), 'read' (mark read), 'unread', 'archive'. Tell Freedom how many you're about to trash before doing big batches.",
+    parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' } }, action: { type: 'string', enum: ['trash', 'spam', 'read', 'unread', 'archive'] } }, required: ['ids', 'action'] } } },
+  { type: 'function', function: { name: 'gmail_block', description: 'Block a sender: makes a Gmail filter so every future email from that address (or @domain) goes straight to Trash. Also trashes what is already there from them.',
+    parameters: { type: 'object', properties: { sender: { type: 'string', description: 'Email address or domain like @spammy.com' } }, required: ['sender'] } } },
+  { type: 'function', function: { name: 'gmail_unsubscribe_links', description: "Find the unsubscribe link for an email (by id) so Freedom can stop a mailing list. Give him the link.",
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } } },
 ];
 
 const KV_MISSING = 'Storage is not connected yet (KV binding BRIDGETTE_KV missing).';
@@ -499,10 +514,104 @@ async function runTool(name, args, env, origin, ctx = {}) {
         const svg = floorPlanSvg(args);
         return await storeFile(env, origin, args.title || 'floor-plan', 'svg', svg);
       }
+      case 'gmail_search': case 'gmail_read': case 'gmail_send': case 'gmail_draft':
+      case 'gmail_clean': case 'gmail_block': case 'gmail_unsubscribe_links':
+        return await gmailTool(name, args, env);
       default: return { error: 'Unknown tool ' + name };
     }
   } catch (e) {
     return { error: String(e.message || e) };
+  }
+}
+
+// ---------- Gmail ----------
+const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic';
+const GMAIL_NOT_CONNECTED = "Gmail isn't connected yet. Tell Freedom: tap the ✉️ Gmail button at the top of Bridgette and sign in with Google.";
+async function gmailToken(env) {
+  const t = await env.BRIDGETTE_KV.get('gmail:token', 'json');
+  if (!t || !t.refresh_token) return null;
+  if (t.access_token && t.expires > Date.now() + 60000) return t.access_token;
+  const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: env.GMAIL_CLIENT_ID, client_secret: env.GMAIL_CLIENT_SECRET, refresh_token: t.refresh_token, grant_type: 'refresh_token' }) });
+  const j = await r.json();
+  if (!j.access_token) return null;
+  t.access_token = j.access_token; t.expires = Date.now() + (j.expires_in || 3600) * 1000;
+  await env.BRIDGETTE_KV.put('gmail:token', JSON.stringify(t));
+  return t.access_token;
+}
+async function gapi(env, path, opts = {}) {
+  const tok = await gmailToken(env);
+  if (!tok) throw new Error(GMAIL_NOT_CONNECTED);
+  const r = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/' + path, { ...opts,
+    headers: { authorization: 'Bearer ' + tok, 'content-type': 'application/json', ...(opts.headers || {}) } });
+  if (r.status === 204) return {};
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('Gmail: ' + ((j.error && j.error.message) || r.status));
+  return j;
+}
+function hdr(msg, name) { const h = ((msg.payload && msg.payload.headers) || []).find((x) => x.name.toLowerCase() === name.toLowerCase()); return h ? h.value : ''; }
+function b64urlDecode(s) { try { const bin = atob(String(s).replace(/-/g, '+').replace(/_/g, '/')); return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))); } catch (e) { return ''; } }
+function b64urlEncode(str) { const bytes = new TextEncoder().encode(str); let bin = ''; for (const b of bytes) bin += String.fromCharCode(b); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function bodyText(part) {
+  if (!part) return '';
+  if (part.mimeType === 'text/plain' && part.body && part.body.data) return b64urlDecode(part.body.data);
+  if (part.parts) { for (const p of part.parts) { const t = bodyText(p); if (t) return t; } }
+  if (part.mimeType === 'text/html' && part.body && part.body.data) return b64urlDecode(part.body.data).replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+  return '';
+}
+function rawEmail(to, subject, body) {
+  const subj = /^[\x00-\x7F]*$/.test(subject) ? subject : '=?UTF-8?B?' + btoa(unescape(encodeURIComponent(subject))) + '?=';
+  return b64urlEncode([to ? 'To: ' + to : '', 'Subject: ' + subj, 'Content-Type: text/plain; charset="UTF-8"', '', body].filter((l, i) => l !== '' || i >= 3).join('\r\n'));
+}
+async function gmailTool(name, a, env) {
+  if (!env.GMAIL_CLIENT_ID) return { error: "Gmail isn't set up on Bridgette's server yet (needs the Google keys). Tell Freedom to ask Claude to finish the Gmail setup." };
+  switch (name) {
+    case 'gmail_search': {
+      const max = Math.min(Math.max(parseInt(a.max) || 10, 1), 50);
+      const list = await gapi(env, 'messages?maxResults=' + max + '&q=' + encodeURIComponent(a.query || ''));
+      const ids = (list.messages || []).map((m) => m.id);
+      const out = await Promise.all(ids.map(async (id) => {
+        const m = await gapi(env, 'messages/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date');
+        return { id, from: hdr(m, 'From'), subject: hdr(m, 'Subject'), date: hdr(m, 'Date'), snippet: m.snippet, unread: (m.labelIds || []).includes('UNREAD') };
+      }));
+      return { count: out.length, total_estimate: list.resultSizeEstimate, emails: out };
+    }
+    case 'gmail_read': {
+      const m = await gapi(env, 'messages/' + encodeURIComponent(a.id) + '?format=full');
+      return { id: m.id, from: hdr(m, 'From'), to: hdr(m, 'To'), subject: hdr(m, 'Subject'), date: hdr(m, 'Date'), text: bodyText(m.payload).slice(0, 8000) };
+    }
+    case 'gmail_send': {
+      const r = await gapi(env, 'messages/send', { method: 'POST', body: JSON.stringify({ raw: rawEmail(a.to, a.subject, a.body) }) });
+      return { sent: true, id: r.id, to: a.to };
+    }
+    case 'gmail_draft': {
+      const r = await gapi(env, 'drafts', { method: 'POST', body: JSON.stringify({ message: { raw: rawEmail(a.to || '', a.subject, a.body) } }) });
+      return { draft_saved: true, id: r.id, note: 'It is in his Gmail Drafts folder.' };
+    }
+    case 'gmail_clean': {
+      const ids = (a.ids || []).slice(0, 500);
+      if (!ids.length) return { error: 'No email ids given.' };
+      const map = { trash: { addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] }, spam: { addLabelIds: ['SPAM'], removeLabelIds: ['INBOX'] },
+        read: { removeLabelIds: ['UNREAD'] }, unread: { addLabelIds: ['UNREAD'] }, archive: { removeLabelIds: ['INBOX'] } };
+      const body = map[a.action]; if (!body) return { error: 'Unknown action.' };
+      await gapi(env, 'messages/batchModify', { method: 'POST', body: JSON.stringify({ ids, ...body }) });
+      return { done: true, action: a.action, count: ids.length };
+    }
+    case 'gmail_block': {
+      const s = String(a.sender || '').trim(); if (!s) return { error: 'No sender given.' };
+      await gapi(env, 'settings/filters', { method: 'POST', body: JSON.stringify({ criteria: { from: s }, action: { addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] } }) });
+      const list = await gapi(env, 'messages?maxResults=500&q=' + encodeURIComponent('from:' + s));
+      const ids = (list.messages || []).map((m) => m.id);
+      if (ids.length) await gapi(env, 'messages/batchModify', { method: 'POST', body: JSON.stringify({ ids, addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] }) });
+      return { blocked: s, existing_trashed: ids.length };
+    }
+    case 'gmail_unsubscribe_links': {
+      const m = await gapi(env, 'messages/' + encodeURIComponent(a.id) + '?format=full');
+      const lu = hdr(m, 'List-Unsubscribe');
+      const links = (lu.match(/<(https?:[^>]+)>/g) || []).map((x) => x.slice(1, -1));
+      if (!links.length) { const t = bodyText(m.payload); const mm = t.match(/https?:\/\/\S*unsub\S*/i); if (mm) links.push(mm[0]); }
+      return links.length ? { from: hdr(m, 'From'), unsubscribe: links } : { from: hdr(m, 'From'), unsubscribe: [], note: 'No unsubscribe link found. Offer to block the sender instead.' };
+    }
   }
 }
 
@@ -660,6 +769,35 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     const origin = url.origin;
+
+    // ----- Gmail connect -----
+    if (url.pathname === '/api/gmail/status') {
+      if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
+      const t = env.BRIDGETTE_KV && await env.BRIDGETTE_KV.get('gmail:token', 'json');
+      return json({ setup: !!env.GMAIL_CLIENT_ID, connected: !!(t && t.refresh_token) });
+    }
+    if (url.pathname === '/api/gmail/start') {
+      if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
+      if (!env.GMAIL_CLIENT_ID) return json({ error: 'Gmail keys are not set on the server yet.' }, 400);
+      const state = crypto.randomUUID();
+      await env.BRIDGETTE_KV.put('gmail:state:' + state, '1', { expirationTtl: 600 });
+      const p = new URLSearchParams({ client_id: env.GMAIL_CLIENT_ID, redirect_uri: origin + '/api/gmail/callback', response_type: 'code',
+        scope: GMAIL_SCOPES, access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state, login_hint: 'arthurfreedombates2026@gmail.com' });
+      return json({ url: 'https://accounts.google.com/o/oauth2/v2/auth?' + p });
+    }
+    if (url.pathname === '/api/gmail/callback') {
+      const state = url.searchParams.get('state') || '', code = url.searchParams.get('code') || '';
+      const page = (msg) => new Response('<!doctype html><meta name=viewport content="width=device-width"><body style="font:20px system-ui;background:#0e2236;color:#fff;padding:40px;text-align:center"><h2>' + msg + '</h2><p><a style="color:#7cc4ff" href="/">Back to Bridgette</a></p>', { headers: { 'content-type': 'text/html' } });
+      if (!state || !(await env.BRIDGETTE_KV.get('gmail:state:' + state))) return page('That sign-in link expired. Tap ✉️ Gmail again.');
+      await env.BRIDGETTE_KV.delete('gmail:state:' + state);
+      if (!code) return page('Google sign-in was cancelled.');
+      const r = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ code, client_id: env.GMAIL_CLIENT_ID, client_secret: env.GMAIL_CLIENT_SECRET, redirect_uri: origin + '/api/gmail/callback', grant_type: 'authorization_code' }) });
+      const j = await r.json();
+      if (!j.refresh_token) return page('Google did not give Bridgette access (' + (j.error_description || j.error || 'no refresh token') + '). Tap ✉️ Gmail and try again.');
+      await env.BRIDGETTE_KV.put('gmail:token', JSON.stringify({ refresh_token: j.refresh_token, access_token: j.access_token, expires: Date.now() + (j.expires_in || 3600) * 1000 }));
+      return page('✅ Gmail is connected to Bridgette.');
+    }
 
     if (url.pathname === '/api/chat' && req.method === 'POST') {
       if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
