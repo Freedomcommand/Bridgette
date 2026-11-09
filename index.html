@@ -264,6 +264,7 @@ function updateSpeakBtn() { $('speakToggle').textContent = speak ? '🔊 Voice o
 
 async function send(text) {
   if (!text.trim() && !pending.length) return;
+  await syncLatestChat(); // catch up first so this device never writes over newer messages
   let content = text;
   if (pending.length) {
     const parts = [];
@@ -453,16 +454,23 @@ async function syncLatestChat() {
     if (!r.ok) return;
     const j = await r.json();
     const top = j.chats && j.chats[0];
-    if (!top || top.id === chatId || $('send').disabled) return;
+    if (!top || $('send').disabled) return;
+    // Same chat: only reload if the cloud copy has moved on (new messages from another device)
+    if (top.id === chatId && top.updated === window._lastSeen) return;
+    window._lastSeen = top.updated;
     // Load it straight in (no re-save, so devices don't keep flipping each other's chats)
     const c = await fetch('/api/chats/' + encodeURIComponent(top.id), { headers: { 'x-bridgette-key': key } });
     if (!c.ok) return;
     const v = await c.json();
     if (!v.messages || !v.messages.length) return;
+    if (top.id === chatId && v.messages.length <= history.length) return;
     chatId = top.id; store.set('bridgette.chatId', chatId); history = v.messages; saveLocal(); render();
   } catch (e) {}
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncLatestChat(); });
+window.addEventListener('focus', () => syncLatestChat());
+// Keep checking while the screen is open (PC/tablet left on), so it catches up on its own
+setInterval(() => { if (document.visibilityState === 'visible') syncLatestChat(); }, 15000);
 (async () => {
   updateSpeakBtn(); render(); checkLaptop(); syncLatestChat();
   try { const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } }); if (r.status === 401) showLogin(); } catch (e) {}
