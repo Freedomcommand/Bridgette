@@ -48,6 +48,8 @@
   .sheetbar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; position:sticky; top:0; background:var(--panel); border-bottom:1px solid #223a52; }
   .histrow { padding:12px 16px; border-bottom:1px solid #223a52; cursor:pointer; }
   .histrow:hover { background:#1c344c; }
+  .histrow.current { background:#1f4f7a; border-left:5px solid #ffd54a; }
+  .hcurrent { display:block; color:#ffd54a; font-weight:700; font-size:14px; margin-bottom:4px; }
   .hrename { margin-top:6px; font-size:13px; padding:4px 10px; }
   .htitle { display:block; color:var(--text); font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .hwhen { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
@@ -322,7 +324,7 @@ $('histBtn').onclick = async () => {
   if (!chats.length) { $('histList').innerHTML = '<p style="color:var(--muted);padding:16px">No saved chats yet.</p>'; return; }
   $('histList').innerHTML = '';
   for (const c of chats) {
-    const row = document.createElement('div'); row.className = 'histrow';
+    const row = document.createElement('div'); row.className = 'histrow' + (c.id === chatId ? ' current' : '');
     const t = document.createElement('span'); t.className = 'htitle'; t.textContent = c.title || 'Chat';
     const w = document.createElement('span'); w.className = 'hwhen'; w.textContent = c.updated ? new Date(c.updated).toLocaleString() : '';
     const rn = document.createElement('button'); rn.textContent = '✏️ Rename'; rn.className = 'hrename';
@@ -336,6 +338,7 @@ $('histBtn').onclick = async () => {
       const idx = localChats(); const e = idx.find((x) => x.id === c.id); if (e) { e.title = clean; store.set('bridgette.chatIndex', idx); }
       try { await fetch('/api/chats/' + encodeURIComponent(c.id), { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-bridgette-key': key }, body: JSON.stringify({ title: clean }) }); } catch (e) {}
     };
+    if (c.id === chatId) { const cur = document.createElement('span'); cur.className = 'hcurrent'; cur.textContent = '● Current chat'; row.appendChild(cur); }
     row.appendChild(t); row.appendChild(w); row.appendChild(rn); row.onclick = () => openChat(c.id);
     $('histList').appendChild(row);
   }
@@ -422,7 +425,7 @@ function renderBrains(names) {
   $('brainList').innerHTML = '';
   for (const name of names) {
     const disabled = (brainPref.disabled || []).includes(name);
-    const row = document.createElement('div'); row.className = 'histrow'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '12px';
+    const row = document.createElement('div'); row.className = 'histrow' + (c.id === chatId ? ' current' : ''); row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '12px';
     const star = document.createElement('button'); star.textContent = brainPref.preferred === name ? '★' : '☆';
     star.style.cssText = 'background:none;border:none;color:var(--accent);font-size:22px;cursor:pointer;padding:0';
     const label = document.createElement('span'); label.className = 'htitle'; label.style.flex = '1'; label.textContent = name;
