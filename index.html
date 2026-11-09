@@ -76,6 +76,7 @@
     <button id="refreshBtn" title="Refresh Bridgette">🔄 Refresh</button>
     <button id="newChat">New chat</button>
   </header>
+  <div id="dueBanner" style="display:none;background:#5a1f1f;color:#fff;padding:10px 14px;font-size:15px;border-bottom:2px solid #ffd54a"></div>
   <div id="avatarWrap"><canvas id="avatar"></canvas></div>
   <div id="log"></div>
   <div id="pending"></div>
@@ -350,6 +351,17 @@ async function gmailStatus() {
 }
 $('gmailBtn').onclick = async () => {
   const st = await gmailStatus();
+// Grant deadline warning banner (due in 14 days or less and not sent yet)
+async function checkGrantsDue() {
+  try {
+    const r = await fetch('/api/grants/due', { headers: { 'x-bridgette-key': key } }); const j = await r.json();
+    const b = $('dueBanner');
+    if (!j.due || !j.due.length) { b.style.display = 'none'; return; }
+    b.textContent = '⏰ Grant deadlines: ' + j.due.map((g) => g.funder + (g.days_left < 0 ? ' — PAST DUE' : g.days_left === 0 ? ' — due TODAY' : ' — ' + g.days_left + ' day' + (g.days_left === 1 ? '' : 's') + ' left')).join('  •  ');
+    b.style.display = 'block';
+  } catch (e) {}
+}
+checkGrantsDue(); setInterval(checkGrantsDue, 30 * 60 * 1000);
   if (st.connected && !confirm('Gmail is already connected. Connect again?')) return;
   try {
     const r = await fetch('/api/gmail/start', { headers: { 'x-bridgette-key': key } }); const j = await r.json();

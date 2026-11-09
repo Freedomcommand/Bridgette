@@ -36,6 +36,7 @@ How you work:
 - Speak plainly and straight. Short answers unless he asks for more. Be honest about mistakes and limits.
 - HONESTY IS CRITICAL. Never claim you did something unless you actually used a tool this turn and have a real result or working link to show. If you only imagined or described it, say so plainly: "I can't actually do that yet."
 - NEVER tell Freedom you created, saved, built, or rendered a file unless the tool THIS TURN came back with real success and the actual path. If a tool fails or the laptop link is offline, say so plainly and briefly as a simple fact — for example: "That didn't work — the laptop link is offline right now, so I couldn't run it." Stay CALM and matter-of-fact: do NOT dramatize it, do not apologize over and over, and do not call yourself a liar — one hiccup is not a lie. Just never invent a success or a file path that isn't real. And if an EARLIER step really did succeed (a file that already saved), that still stands even if a later step fails — don't take back a real success just because the connection dropped afterward.
+- GRANTS & DONATIONS: keep Freedom's grants in grant_tracker (funder, amount, deadline, status) and gifts in donation_tracker. When he mentions applying for a grant or getting a donation, offer to log it. When he asks what's due, list grants with days left.
 - EMAIL: you CAN work in Freedom's Gmail with your gmail_ tools (search, read, draft, clean up, block senders, find unsubscribe links, send). Never send an email unless he clearly says to send it — show him the full email first. Before trashing a big batch, tell him how many.
 - You CANNOT build or host websites or online stores, log into his other accounts (Amazon, Square, PayPal), set up payments, or post to social media. You have NO tool for those. If he asks, tell him straight that you can't do it, and point him to the real way (for a store: Square's free online store).
 - Do not exaggerate or invent abilities. When you are unsure or can't do something, say so directly. One small honest answer beats a big made-up one. Freedom is trusting you to be truthful.
@@ -112,6 +113,10 @@ const TOOLS = [
       doors: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, wall: { type: 'string', enum: ['horizontal', 'vertical'] } } } },
       windows: { type: 'array', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' }, length: { type: 'number' }, wall: { type: 'string', enum: ['horizontal', 'vertical'] } } } },
     }, required: ['title', 'rooms'] } } },
+  { type: 'function', function: { name: 'grant_tracker', description: "Freedom's grant tracker. action 'add' a grant (funder, amount, deadline YYYY-MM-DD, status, notes, link), 'update' one by id (any of those fields), 'remove' by id, or 'list' all (sorted by deadline, shows days left). Status is one of: idea, preparing, sent, waiting, awarded, declined.",
+    parameters: { type: 'object', properties: { action: { type: 'string', enum: ['add', 'update', 'remove', 'list'] }, id: { type: 'string' }, funder: { type: 'string' }, org: { type: 'string', description: 'Which group it is for, e.g. Fire Mountain Ministries' }, amount: { type: 'string' }, deadline: { type: 'string', description: 'YYYY-MM-DD' }, status: { type: 'string' }, notes: { type: 'string' }, link: { type: 'string' } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'donation_tracker', description: "Freedom's donation log. action 'add' a donation (donor, amount, date YYYY-MM-DD, org, note), 'remove' by id, or 'list' (optionally from/to dates) with totals.",
+    parameters: { type: 'object', properties: { action: { type: 'string', enum: ['add', 'remove', 'list'] }, id: { type: 'string' }, donor: { type: 'string' }, amount: { type: 'number' }, date: { type: 'string' }, org: { type: 'string' }, note: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' } }, required: ['action'] } } },
   { type: 'function', function: { name: 'gmail_search', description: "Search Freedom's Gmail (arthurfreedombates2026@gmail.com). Use Gmail search words, e.g. 'is:unread', 'from:amazon', 'newer_than:2d', 'category:promotions'. Returns id, from, subject, date, snippet for each email.",
     parameters: { type: 'object', properties: { query: { type: 'string' }, max: { type: 'number', description: 'How many (default 10, up to 50)' } }, required: ['query'] } } },
   { type: 'function', function: { name: 'gmail_read', description: 'Read the full text of one email by its id (from gmail_search).',
@@ -514,6 +519,8 @@ async function runTool(name, args, env, origin, ctx = {}) {
         const svg = floorPlanSvg(args);
         return await storeFile(env, origin, args.title || 'floor-plan', 'svg', svg);
       }
+      case 'grant_tracker': return await grantTool(args, env);
+      case 'donation_tracker': return await donationTool(args, env);
       case 'gmail_search': case 'gmail_read': case 'gmail_send': case 'gmail_draft':
       case 'gmail_clean': case 'gmail_block': case 'gmail_unsubscribe_links':
         return await gmailTool(name, args, env);
@@ -522,6 +529,56 @@ async function runTool(name, args, env, origin, ctx = {}) {
   } catch (e) {
     return { error: String(e.message || e) };
   }
+}
+
+// ---------- Grants & donations ----------
+function houstonToday(env) { return new Date().toLocaleDateString('en-CA', { timeZone: env.TIMEZONE || TZ_DEFAULT }); }
+function daysLeft(deadline, today) { if (!deadline) return null; return Math.round((Date.parse(deadline + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000); }
+async function grantList(env) {
+  const today = houstonToday(env);
+  const list = (await env.BRIDGETTE_KV.get('grants', 'json')) || [];
+  return list.map((g) => ({ ...g, days_left: daysLeft(g.deadline, today) }))
+    .sort((a, b) => (a.deadline || '9999') .localeCompare(b.deadline || '9999'));
+}
+async function grantTool(a, env) {
+  if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
+  let list = (await env.BRIDGETTE_KV.get('grants', 'json')) || [];
+  const fields = ['funder', 'org', 'amount', 'deadline', 'status', 'notes', 'link'];
+  if (a.action === 'add') {
+    if (!a.funder) return { error: 'Need the funder name.' };
+    const g = { id: crypto.randomUUID().slice(0, 8), status: 'preparing' };
+    for (const f of fields) if (a[f] != null && a[f] !== '') g[f] = String(a[f]);
+    list.push(g); await env.BRIDGETTE_KV.put('grants', JSON.stringify(list));
+    return { added: g };
+  }
+  if (a.action === 'update' || a.action === 'remove') {
+    const g = list.find((x) => x.id === a.id || (a.funder && x.funder && x.funder.toLowerCase() === String(a.funder).toLowerCase()));
+    if (!g) return { error: 'No grant with that id or funder. List them first.' };
+    if (a.action === 'remove') list = list.filter((x) => x !== g);
+    else for (const f of fields) if (a[f] != null && a[f] !== '' && !(f === 'funder' && !a.id)) g[f] = String(a[f]);
+    await env.BRIDGETTE_KV.put('grants', JSON.stringify(list));
+    return a.action === 'remove' ? { removed: g } : { updated: g };
+  }
+  return { today: houstonToday(env), grants: await grantList(env) };
+}
+async function donationTool(a, env) {
+  if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
+  let list = (await env.BRIDGETTE_KV.get('donations', 'json')) || [];
+  if (a.action === 'add') {
+    const amt = Number(a.amount); if (!(amt > 0)) return { error: 'Need an amount.' };
+    const d = { id: crypto.randomUUID().slice(0, 8), donor: a.donor || 'Anonymous', amount: amt, date: a.date || houstonToday(env), org: a.org || 'Fire Mountain Ministries', note: a.note || '' };
+    list.push(d); await env.BRIDGETTE_KV.put('donations', JSON.stringify(list));
+    return { added: d };
+  }
+  if (a.action === 'remove') {
+    const before = list.length; list = list.filter((x) => x.id !== a.id);
+    await env.BRIDGETTE_KV.put('donations', JSON.stringify(list));
+    return { removed: before - list.length };
+  }
+  const shown = list.filter((d) => (!a.from || d.date >= a.from) && (!a.to || d.date <= a.to)).sort((x, y) => y.date.localeCompare(x.date));
+  const total = shown.reduce((s, d) => s + d.amount, 0);
+  const byOrg = {}; for (const d of shown) byOrg[d.org] = (byOrg[d.org] || 0) + d.amount;
+  return { count: shown.length, total: Math.round(total * 100) / 100, by_org: byOrg, donations: shown };
 }
 
 // ---------- Gmail ----------
@@ -769,6 +826,14 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     const origin = url.origin;
+
+    // ----- Grant deadline warnings (for the banner) -----
+    if (url.pathname === '/api/grants/due') {
+      if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
+      if (!env.BRIDGETTE_KV) return json({ due: [] });
+      const due = (await grantList(env)).filter((g) => g.days_left != null && g.days_left <= 14 && !['sent', 'waiting', 'awarded', 'declined'].includes((g.status || '').toLowerCase()));
+      return json({ due });
+    }
 
     // ----- Gmail connect -----
     if (url.pathname === '/api/gmail/status') {
