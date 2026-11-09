@@ -2,7 +2,7 @@
 
 Freedom's personal AI, live at https://bridgette.pages.dev
 
-- `_worker.js` — her brain chain, tools (web search, read pages, memory, files, floor plans, Word documents, laptop)
+- `_worker.js` — her brain chain, tools (web search, read pages, memory, files, floor plans, Word documents, laptop, websites at /site/<name>, Square store, PayPal, mouse & keyboard on the PC)
 - `index.html` — the chat app
 - `laptop/` — Bridgette Link: lets her work on Freedom's Windows laptop. Set up by running in PowerShell:
   `irm https://bridgette.pages.dev/laptop/setup.ps1 | iex`

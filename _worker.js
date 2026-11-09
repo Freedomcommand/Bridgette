@@ -38,7 +38,10 @@ How you work:
 - NEVER tell Freedom you created, saved, built, or rendered a file unless the tool THIS TURN came back with real success and the actual path. If a tool fails or the laptop link is offline, say so plainly and briefly as a simple fact — for example: "That didn't work — the laptop link is offline right now, so I couldn't run it." Stay CALM and matter-of-fact: do NOT dramatize it, do not apologize over and over, and do not call yourself a liar — one hiccup is not a lie. Just never invent a success or a file path that isn't real. And if an EARLIER step really did succeed (a file that already saved), that still stands even if a later step fails — don't take back a real success just because the connection dropped afterward.
 - GRANTS & DONATIONS: keep Freedom's grants in grant_tracker (funder, amount, deadline, status) and gifts in donation_tracker. When he mentions applying for a grant or getting a donation, offer to log it. When he asks what's due, list grants with days left.
 - EMAIL: you CAN work in Freedom's Gmail with your gmail_ tools (search, read, draft, clean up, block senders, find unsubscribe links, send). Never send an email unless he clearly says to send it — show him the full email first. Before trashing a big batch, tell him how many.
-- You CANNOT build or host websites or online stores, log into his other accounts (Amazon, Square, PayPal), set up payments, or post to social media. You have NO tool for those. If he asks, tell him straight that you can't do it, and point him to the real way (for a store: Square's free online store).
+- WEBSITES & STORES: you CAN build websites and put them online with build_website (a full, good-looking HTML page; it goes live at a public link). For an online store, make a Square checkout link for each product with the square tool, then build the store page with Buy buttons that go to those links. Same name again = update the site.
+- MONEY ACCOUNTS: you can work in his Square (products, checkout links, sales, orders) and PayPal (transactions, invoices). Never send an invoice, charge anyone, or change prices without his "yes".
+- AMAZON, SOCIAL MEDIA, AND ANY OTHER SITE: there is no direct key for these, so you use his own PC the way a person would — pc_mouse open_site to open the site in his normal browser (he is already signed in there), see_screen to look, pc_mouse to click and type, see_screen again to check. NEVER ask for, type, or save his passwords — if a site needs him to sign in, tell him to sign in himself once on the PC, then you carry on. ALWAYS show him the exact post or purchase and wait for his "yes" before you post anything publicly, buy anything, or submit anything. The PC must be on and awake.
+- PDFs: read_document reads PDFs on his PC. PDFs he attaches in the chat arrive as text already.
 - Do not exaggerate or invent abilities. When you are unsure or can't do something, say so directly. One small honest answer beats a big made-up one. Freedom is trusting you to be truthful.
 - FIXING CODE (his, or your own) — you MUST TEST it before you ever call it done or deploy it. Never change code and just hope. Rules: (1) have your STRONGEST code brain write the fix (DeepSeek through OpenRouter if it's available). (2) Check the new code actually parses/runs with no errors before it goes anywhere — if it won't even parse, it is NOT ready, fix it or stop. (3) Keep the previous WORKING version saved as a backup first, so a broken change can be put right back. (4) Never push or save a code change you have not tested. If you cannot test it, say so and do NOT deploy it. A change that breaks you is worse than no change — when in doubt, show Freedom the fix and ask before applying it.
 - When he dictates words to write, use his exact words.
@@ -94,7 +97,7 @@ const TOOLS = [
     parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'laptop_write', description: "Make or change a text file on Freedom's laptop (creates folders as needed). Set append true to add to the end instead of replacing.",
     parameters: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string' }, append: { type: 'boolean' } }, required: ['path', 'content'] } } },
-  { type: 'function', function: { name: 'read_document', description: "Read the real contents of a document on Freedom's PC — Word (.docx), Excel (.xlsx), and text files (.txt, .md, .csv, code, etc.). Use this when he asks what's in a file or to read/summarize a document. Paths may start with ~ for his home folder. (Pictures: ask him to send them with the clip button so you can see them. PDF not supported yet.)",
+  { type: 'function', function: { name: 'read_document', description: "Read the real contents of a document on Freedom's PC — Word (.docx), Excel (.xlsx), PDF (.pdf), and text files (.txt, .md, .csv, code, etc.). Use this when he asks what's in a file or to read/summarize a document. Paths may start with ~ for his home folder. Also reads PDFs. (Pictures: ask him to send them with the clip button so you can see them.)",
     parameters: { type: 'object', properties: { path: { type: 'string', description: 'Full path to the file, e.g. ~/Desktop/resume.docx' } }, required: ['path'] } } },
   { type: 'function', function: { name: 'blender', description: "Design in 3D with Blender on Freedom's PC (modeling, products, moving parts, renders). Give a COMPLETE Blender Python script (bpy); it runs on the PC in the background. Start with 'import bpy, os'. ALWAYS save the result: bpy.ops.wm.save_as_mainfile(filepath=os.path.expanduser('~/Desktop/<name>.blend')). When he should SEE it, also render a picture: set bpy.context.scene.render.filepath=os.path.expanduser('~/Desktop/<name>.png') then bpy.ops.render.render(write_still=True). For moving parts, keyframe with obj.keyframe_insert. Then tell Freedom exactly where you saved the .blend and .png so he can open them.",
     parameters: { type: 'object', properties: { script: { type: 'string', description: 'Full Blender bpy Python script' } }, required: ['script'] } } },
@@ -130,7 +133,19 @@ const TOOLS = [
   { type: 'function', function: { name: 'gmail_block', description: 'Block a sender: makes a Gmail filter so every future email from that address (or @domain) goes straight to Trash. Also trashes what is already there from them.',
     parameters: { type: 'object', properties: { sender: { type: 'string', description: 'Email address or domain like @spammy.com' } }, required: ['sender'] } } },
   { type: 'function', function: { name: 'gmail_unsubscribe_links', description: "Find the unsubscribe link for an email (by id) so Freedom can stop a mailing list. Give him the link.",
-    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } } },
+    parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } } },  { type: 'function', function: { name: 'build_website', description: "Build and PUT ONLINE a website page (or an online store page) for Freedom. Give a COMPLETE self-contained HTML page (all CSS inside a <style> tag, mobile-friendly, nice design). It goes live right away at a public link anyone can open. Using the same name again UPDATES that site. For a store, first make Square checkout links with the square tool, then put each product on the page with a Buy button linking to its checkout link.",
+    parameters: { type: 'object', properties: { name: { type: 'string', description: 'short site name, becomes the web address, e.g. ini-clothing' },
+      html: { type: 'string', description: 'the complete HTML page' } }, required: ['name', 'html'] } } },
+  { type: 'function', function: { name: 'list_websites', description: 'List the websites Bridgette has put online for Freedom, with their links.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'square', description: "Freedom's Square account (his store payments). action 'locations' (his business locations), 'items' (his product catalog), 'add_item' (name, price, description), 'checkout_link' (name + price → a real pay link anyone can buy with; use these for Buy buttons on store pages), 'payments' (recent sales), 'orders' (recent orders). Prices are in dollars like 29.99.",
+    parameters: { type: 'object', properties: { action: { type: 'string', enum: ['locations', 'items', 'add_item', 'checkout_link', 'payments', 'orders'] },
+      name: { type: 'string' }, price: { type: 'number' }, description: { type: 'string' }, limit: { type: 'number' } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'paypal', description: "Freedom's PayPal business account. action 'transactions' (money in/out, last N days, up to 31), 'invoices' (list invoices), 'create_invoice' (to email, item, amount, note — saved as a draft, NOT sent), 'send_invoice' (by id — ONLY after Freedom says send).",
+    parameters: { type: 'object', properties: { action: { type: 'string', enum: ['transactions', 'invoices', 'create_invoice', 'send_invoice'] },
+      days: { type: 'number' }, email: { type: 'string' }, item: { type: 'string' }, amount: { type: 'number' }, note: { type: 'string' }, id: { type: 'string' } }, required: ['action'] } } },
+  { type: 'function', function: { name: 'pc_mouse', description: "Use the mouse and keyboard on Freedom's PC like a person would. ALWAYS call see_screen first and use x,y positions from THAT screenshot picture. action 'click', 'double_click', 'right_click', 'move', 'scroll' (amount: negative = down), 'type' (text), 'keys' (SendKeys codes like {ENTER}, {TAB}, ^l for Ctrl+L), 'open_site' (url — opens it in his normal web browser, where he is already signed in). After acting, call see_screen again to check what happened.",
+    parameters: { type: 'object', properties: { action: { type: 'string', enum: ['click', 'double_click', 'right_click', 'move', 'scroll', 'type', 'keys', 'open_site'] },
+      x: { type: 'number' }, y: { type: 'number' }, text: { type: 'string' }, amount: { type: 'number' }, url: { type: 'string' } }, required: ['action'] } } },
 ];
 
 const KV_MISSING = 'Storage is not connected yet (KV binding BRIDGETTE_KV missing).';
@@ -494,6 +509,7 @@ async function runTool(name, args, env, origin, ctx = {}) {
         if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
         const name = 'screen-' + Date.now().toString(36) + '.jpg';
         const cap = "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; "
+          + "if (-not ('BDpi' -as [type])) { Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class BDpi { [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware(); }' }; [BDpi]::SetProcessDPIAware() | Out-Null; "
           + "$b=[System.Windows.Forms.SystemInformation]::VirtualScreen; "
           + "$full=New-Object System.Drawing.Bitmap $b.Width,$b.Height; "
           + "$g=[System.Drawing.Graphics]::FromImage($full); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); "
@@ -513,7 +529,7 @@ async function runTool(name, args, env, origin, ctx = {}) {
         if (r && r.error) return r;
         const out = String((r && r.output) || '').trim();
         if (!/OK/.test(out) || /FAIL/.test(out)) return { error: 'Could not grab the screen — the PC may be locked, asleep, or offline. (' + out.slice(0, 200) + ')' };
-        return { saved: name, link: `${origin}/files/${name}`, note: 'Screenshot taken. It is also on his Desktop as bridgette_screen.png. Give Freedom this link so he can see it, then use control_app to act on what is on screen.' };
+        return { saved: name, link: `${origin}/files/${name}`, note: 'Screenshot taken. It is also on his Desktop as bridgette_screen.png. Give Freedom this link so he can see it, then use pc_mouse (with x,y from this picture, which is 1280 wide or smaller) to act on what is on screen.' };
       }
       case 'draw_floor_plan': {
         const svg = floorPlanSvg(args);
@@ -524,10 +540,156 @@ async function runTool(name, args, env, origin, ctx = {}) {
       case 'gmail_search': case 'gmail_read': case 'gmail_send': case 'gmail_draft':
       case 'gmail_clean': case 'gmail_block': case 'gmail_unsubscribe_links':
         return await gmailTool(name, args, env);
+      case 'build_website': {
+        if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
+        const site = slug(args.name);
+        let html = String(args.html || '');
+        if (!/<html|<body|<div|<h1|<p/i.test(html)) return { error: 'No page given — send the full HTML.' };
+        if (html.length > 2000000) return { error: 'That page is too big (over 2 MB). Make it smaller — link pictures instead of pasting them in.' };
+        const existed = (await env.BRIDGETTE_KV.get('site:' + site)) != null;
+        await env.BRIDGETTE_KV.put('site:' + site, html, { metadata: { updated: new Date().toISOString() } });
+        return { live: true, updated: existed, link: `${origin}/site/${site}`, note: 'The site is online now at this link. Give Freedom the link.' };
+      }
+      case 'list_websites': {
+        if (!env.BRIDGETTE_KV) return { error: KV_MISSING };
+        const l = await env.BRIDGETTE_KV.list({ prefix: 'site:' });
+        return { sites: l.keys.map((k) => ({ name: k.name.slice(5), link: `${origin}/site/${k.name.slice(5)}`, updated: k.metadata?.updated })) };
+      }
+      case 'square': return await squareTool(args, env);
+      case 'paypal': return await paypalTool(args, env);
+      case 'pc_mouse': {
+        const a = args.action, q = (t) => String(t ?? '').replace(/'/g, "''");
+        const pre = "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; "
+          + "if (-not ('BMouse' -as [type])) { Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class BMouse { [DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int x,int y); [DllImport(\"user32.dll\")] public static extern void mouse_event(uint f,uint x,uint y,int d,UIntPtr e); [DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware(); }' }; "
+          + "[BMouse]::SetProcessDPIAware() | Out-Null; "
+          + "$b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $tw=1280; if($b.Width -lt $tw){$tw=$b.Width}; $s=$b.Width/$tw; ";
+        const at = (x, y) => `$X=[int]($b.Left + ${Number(x) || 0}*$s); $Y=[int]($b.Top + ${Number(y) || 0}*$s); [BMouse]::SetCursorPos($X,$Y) | Out-Null; Start-Sleep -Milliseconds 120; `;
+        const press = (down, up) => `[BMouse]::mouse_event(${down},0,0,0,[UIntPtr]::Zero); [BMouse]::mouse_event(${up},0,0,0,[UIntPtr]::Zero); `;
+        let cmd;
+        if (a === 'open_site') {
+          const u = String(args.url || ''); if (!/^https?:\/\//i.test(u)) return { error: 'Give a full web address starting with https://' };
+          cmd = `Start-Process '${q(u)}'; Start-Sleep -Seconds 4; 'opened'`;
+        } else if (a === 'type') cmd = pre + `[System.Windows.Forms.SendKeys]::SendWait(('${q(args.text)}' -replace '([+^%~(){}\\[\\]])','{$1}')); 'typed'`;
+        else if (a === 'keys') cmd = pre + `[System.Windows.Forms.SendKeys]::SendWait('${q(args.text)}'); 'sent'`;
+        else if (a === 'scroll') cmd = pre + (args.x != null ? at(args.x, args.y) : '') + `[BMouse]::mouse_event(0x0800,0,0,${Math.round(Number(args.amount) || -5) * 120},[UIntPtr]::Zero); 'scrolled'`;
+        else if (args.x == null || args.y == null) return { error: 'Need x and y from the see_screen picture.' };
+        else if (a === 'move') cmd = pre + at(args.x, args.y) + "'moved'";
+        else if (a === 'right_click') cmd = pre + at(args.x, args.y) + press(8, 16) + "'right-clicked'";
+        else if (a === 'double_click') cmd = pre + at(args.x, args.y) + press(2, 4) + 'Start-Sleep -Milliseconds 80; ' + press(2, 4) + "'double-clicked'";
+        else cmd = pre + at(args.x, args.y) + press(2, 4) + "'clicked'";
+        return await laptopCall(env, 'run', { command: cmd, timeout: 40 }, 70, ctx);
+      }
       default: return { error: 'Unknown tool ' + name };
     }
   } catch (e) {
     return { error: String(e.message || e) };
+  }
+}
+
+// ---------- Square (store payments) ----------
+const SQUARE_MISSING = "Square isn't connected yet. Tell Freedom: ask Claude to walk you through getting the Square key (it's free).";
+async function sq(env, path, opts = {}) {
+  const r = await fetch('https://connect.squareup.com/v2/' + path, { ...opts, headers: {
+    authorization: 'Bearer ' + env.SQUARE_ACCESS_TOKEN, 'square-version': '2025-01-23', 'content-type': 'application/json' } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('Square said: ' + ((j.errors || []).map((e) => e.detail || e.code).join('; ') || r.status));
+  return j;
+}
+async function sqLocation(env) {
+  if (env.SQUARE_LOCATION_ID) return env.SQUARE_LOCATION_ID;
+  const j = await sq(env, 'locations');
+  const loc = (j.locations || []).find((l) => l.status === 'ACTIVE') || (j.locations || [])[0];
+  if (!loc) throw new Error('No Square location found on his account.');
+  return loc.id;
+}
+const cents = (d) => Math.round(Number(d) * 100);
+const money = (m) => m ? '$' + (Number(m.amount) / 100).toFixed(2) : '';
+async function squareTool(a, env) {
+  if (!env.SQUARE_ACCESS_TOKEN) return { error: SQUARE_MISSING };
+  const n = Math.min(Number(a.limit) || 20, 100);
+  switch (a.action) {
+    case 'locations': {
+      const j = await sq(env, 'locations');
+      return { locations: (j.locations || []).map((l) => ({ id: l.id, name: l.name, status: l.status })) };
+    }
+    case 'items': {
+      const j = await sq(env, 'catalog/list?types=ITEM');
+      return { items: (j.objects || []).slice(0, n).map((o) => ({ id: o.id, name: o.item_data?.name,
+        prices: (o.item_data?.variations || []).map((v) => money(v.item_variation_data?.price_money)).join(', ') })) };
+    }
+    case 'add_item': {
+      if (!a.name || !(a.price > 0)) return { error: 'Need a name and a price.' };
+      const j = await sq(env, 'catalog/object', { method: 'POST', body: JSON.stringify({ idempotency_key: crypto.randomUUID(), object: {
+        type: 'ITEM', id: '#item', item_data: { name: a.name, description: a.description || undefined, variations: [{ type: 'ITEM_VARIATION', id: '#var',
+          item_variation_data: { name: 'Regular', pricing_type: 'FIXED_PRICING', price_money: { amount: cents(a.price), currency: 'USD' } } }] } } }) });
+      return { added: a.name, price: '$' + Number(a.price).toFixed(2), id: j.catalog_object?.id };
+    }
+    case 'checkout_link': {
+      if (!a.name || !(a.price > 0)) return { error: 'Need a name and a price.' };
+      const j = await sq(env, 'online-checkout/payment-links', { method: 'POST', body: JSON.stringify({ idempotency_key: crypto.randomUUID(),
+        description: a.description || undefined,
+        quick_pay: { name: a.name, price_money: { amount: cents(a.price), currency: 'USD' }, location_id: await sqLocation(env) } }) });
+      return { item: a.name, price: '$' + Number(a.price).toFixed(2), checkout_link: j.payment_link?.url,
+        note: 'Anyone who opens this link can pay with a card. Use it as the Buy button on his store page.' };
+    }
+    case 'payments': {
+      const j = await sq(env, 'payments?sort_order=DESC&limit=' + n);
+      return { payments: (j.payments || []).map((p) => ({ date: p.created_at, amount: money(p.amount_money), status: p.status, note: p.note })) };
+    }
+    case 'orders': {
+      const j = await sq(env, 'orders/search', { method: 'POST', body: JSON.stringify({ location_ids: [await sqLocation(env)], limit: n,
+        query: { sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' } } }) });
+      return { orders: (j.orders || []).map((o) => ({ date: o.created_at, total: money(o.total_money), state: o.state,
+        items: (o.line_items || []).map((li) => li.quantity + ' x ' + li.name).join(', ') })) };
+    }
+    default: return { error: 'Unknown Square action.' };
+  }
+}
+
+// ---------- PayPal ----------
+const PAYPAL_MISSING = "PayPal isn't connected yet. Tell Freedom: ask Claude to walk you through getting the PayPal keys (free, from developer.paypal.com).";
+async function pp(env, path, opts = {}) {
+  const base = env.PAYPAL_SANDBOX ? 'https://api-m.sandbox.paypal.com' : 'https://api-m.paypal.com';
+  const t = await fetch(base + '/v1/oauth2/token', { method: 'POST', body: 'grant_type=client_credentials',
+    headers: { authorization: 'Basic ' + btoa(env.PAYPAL_CLIENT_ID + ':' + env.PAYPAL_SECRET), 'content-type': 'application/x-www-form-urlencoded' } });
+  const tj = await t.json().catch(() => ({}));
+  if (!tj.access_token) throw new Error('PayPal would not let Bridgette in — the PayPal keys may be wrong.');
+  const r = await fetch(base + path, { ...opts, headers: { authorization: 'Bearer ' + tj.access_token, 'content-type': 'application/json', prefer: 'return=representation' } });
+  const j = r.status === 204 ? {} : await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error('PayPal said: ' + (j.message || j.name || r.status) + ((j.details || [])[0]?.description ? ' — ' + j.details[0].description : ''));
+  return j;
+}
+async function paypalTool(a, env) {
+  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_SECRET) return { error: PAYPAL_MISSING };
+  switch (a.action) {
+    case 'transactions': {
+      const days = Math.min(Math.max(Number(a.days) || 30, 1), 31);
+      const end = new Date(), start = new Date(Date.now() - days * 86400000);
+      const j = await pp(env, `/v1/reporting/transactions?fields=transaction_info,payer_info&page_size=100&start_date=${start.toISOString().slice(0, 19)}Z&end_date=${end.toISOString().slice(0, 19)}Z`);
+      return { days, transactions: (j.transaction_details || []).map((t) => ({ date: t.transaction_info?.transaction_initiation_date,
+        amount: t.transaction_info?.transaction_amount?.value, status: t.transaction_info?.transaction_status,
+        who: t.payer_info?.payer_name?.alternate_full_name || t.payer_info?.email_address, note: t.transaction_info?.transaction_note })) };
+    }
+    case 'invoices': {
+      const j = await pp(env, '/v2/invoicing/invoices?page_size=20&total_required=true');
+      return { invoices: (j.items || []).map((i) => ({ id: i.id, status: i.status, to: i.primary_recipients?.[0]?.billing_info?.email_address,
+        amount: i.amount?.value, date: i.detail?.invoice_date })) };
+    }
+    case 'create_invoice': {
+      if (!a.email || !(a.amount > 0)) return { error: 'Need the customer email and an amount.' };
+      const j = await pp(env, '/v2/invoicing/invoices', { method: 'POST', body: JSON.stringify({
+        detail: { currency_code: 'USD', note: a.note || undefined },
+        primary_recipients: [{ billing_info: { email_address: a.email } }],
+        items: [{ name: a.item || 'Services', quantity: '1', unit_amount: { currency_code: 'USD', value: Number(a.amount).toFixed(2) } }] }) });
+      const id = j.id || String(j.href || '').split('/').pop();
+      return { draft_invoice: id, to: a.email, amount: '$' + Number(a.amount).toFixed(2), note: 'Saved as a DRAFT. Show Freedom and only send it when he says send.' };
+    }
+    case 'send_invoice': {
+      if (!a.id) return { error: 'Need the invoice id.' };
+      await pp(env, `/v2/invoicing/invoices/${encodeURIComponent(a.id)}/send`, { method: 'POST', body: JSON.stringify({ send_to_recipient: true }) });
+      return { sent: a.id };
+    }
+    default: return { error: 'Unknown PayPal action.' };
   }
 }
 
@@ -1008,6 +1170,15 @@ export default {
       const v = await env.BRIDGETTE_KV.get('chat:' + id, 'json');
       if (!v) return json({ error: 'Not found' }, 404);
       return json({ id, messages: v.messages || [] });
+    }
+
+    if (url.pathname.startsWith('/site/')) {
+      // Websites Bridgette built — public pages anyone can open
+      if (!env.BRIDGETTE_KV) return new Response(KV_MISSING, { status: 503 });
+      const site = slug(decodeURIComponent(url.pathname.slice(6).split('/')[0]));
+      const page = await env.BRIDGETTE_KV.get('site:' + site);
+      if (page == null) return new Response('This site does not exist yet.', { status: 404, headers: { 'content-type': 'text/plain' } });
+      return new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' } });
     }
 
     if (url.pathname.startsWith('/view/')) {

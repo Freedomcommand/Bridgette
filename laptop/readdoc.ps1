@@ -1,5 +1,5 @@
 param([string]$Path)
-# Reads the real text out of a document on Freedom's PC: Word, Excel, and text files.
+# Reads the real text out of a document on Freedom's PC: Word, Excel, PDF, and text files.
 $ErrorActionPreference = 'Stop'
 try {
   $p = [Environment]::ExpandEnvironmentVariables($Path.Trim().Trim('"'))
@@ -77,11 +77,58 @@ try {
     return
   }
   elseif ($ext -eq '.pdf') {
-    Write-Output "ERROR: I can't read PDF files yet (I can read Word, Excel, and text). Ask Freedom to save it as a Word doc, or we add PDF reading next."
-    return
+    # 1st way: let Microsoft Word open the PDF and hand back its words (best quality).
+    $viaWord = $false
+    try {
+      foreach ($v in @('16.0','15.0')) {
+        $k = "HKCU:\Software\Microsoft\Office\$v\Word\Options"
+        if (Test-Path $k) { Set-ItemProperty -Path $k -Name 'DisableConvertPdfWarning' -Value 1 -Type DWord -ErrorAction SilentlyContinue }
+      }
+      $w = New-Object -ComObject Word.Application
+      $w.Visible = $false; $w.DisplayAlerts = 0
+      try {
+        $d = $w.Documents.Open($p, $false, $true, $false)
+        $text = $d.Content.Text -replace "`r", "`r`n"
+        $d.Close(0); $viaWord = $text.Trim().Length -gt 0
+      } finally { $w.Quit(); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($w) }
+    } catch { $viaWord = $false }
+
+    # 2nd way (no Word): pull the text straight out of the PDF's pages.
+    if (-not $viaWord) {
+      $bytes = [IO.File]::ReadAllBytes($p)
+      $raw = [Text.Encoding]::GetEncoding(28591).GetString($bytes)
+      $sb = New-Object System.Text.StringBuilder
+      foreach ($m in [regex]::Matches($raw, '(?s)<<(.*?)>>\s*stream\r?\n')) {
+        $start = $m.Index + $m.Length
+        $end = $raw.IndexOf('endstream', $start); if ($end -lt 0) { continue }
+        $data = $raw.Substring($start, $end - $start)
+        if ($m.Groups[1].Value -match '/FlateDecode') {
+          try {
+            $buf = [Text.Encoding]::GetEncoding(28591).GetBytes($data)
+            $ms = New-Object IO.MemoryStream(,$buf); $ms.Position = 2
+            $ds = New-Object IO.Compression.DeflateStream($ms, [IO.Compression.CompressionMode]::Decompress)
+            $out = New-Object IO.MemoryStream; try { $ds.CopyTo($out) } catch {}
+            $data = [Text.Encoding]::GetEncoding(28591).GetString($out.ToArray())
+          } catch { continue }
+        } elseif ($m.Groups[1].Value -match '/Filter') { continue }
+        if ($data -notmatch 'T[Jj]') { continue }
+        foreach ($t in [regex]::Matches($data, '(?s)\[(.*?)\]\s*TJ|\(((?:\\.|[^\\)])*)\)\s*(?:Tj|\x27|")|(T\*|Td|TD|ET)')) {
+          if ($t.Groups[3].Success) { [void]$sb.Append(' '); if ($t.Groups[3].Value -ne 'Td') { [void]$sb.AppendLine() }; continue }
+          $chunk = if ($t.Groups[1].Success) { ([regex]::Matches($t.Groups[1].Value, '\(((?:\\.|[^\\)])*)\)') | ForEach-Object { $_.Groups[1].Value }) -join '' } else { $t.Groups[2].Value }
+          $chunk = $chunk -replace '\\n', "`n" -replace '\\\(', '(' -replace '\\\)', ')' -replace '\\\\', '\'
+          [void]$sb.Append($chunk)
+        }
+      }
+      $text = ($sb.ToString() -replace '[ \t]+', ' ' -replace '(\r?\n\s*){3,}', "`r`n`r`n").Trim()
+      if ($text.Length -lt 20) {
+        Write-Output "ERROR: This PDF looks like scanned pictures (no typed text inside), and Word isn't on this PC to read it. Send it to me in the chat with the clip button and I'll look at it, or open it in Word."
+        return
+      }
+      $text = "(Read without Word — spacing may be a little off.)`r`n" + $text
+    }
   }
   else {
-    Write-Output ("ERROR: I can't read " + $ext + " files yet. I can read Word (.docx), Excel (.xlsx), and text files.")
+    Write-Output ("ERROR: I can't read " + $ext + " files yet. I can read Word (.docx), Excel (.xlsx), PDF (.pdf), and text files.")
     return
   }
 
