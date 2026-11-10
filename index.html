@@ -212,7 +212,7 @@ async function openChat(id) {
   } catch (e) {}
   if (!msgs) msgs = localChatGet(id);
   if (!msgs) { $('histList').textContent = 'That chat is still saving — give it a moment and tap it again.'; return; }
-  await saveChat(); chatId = id; store.set('bridgette.chatId', chatId); history = msgs; saveLocal(); render(); $('history').style.display = 'none';
+  await saveChat(); await markPicked(); chatId = id; store.set('bridgette.chatId', chatId); history = msgs; saveLocal(); render(); $('history').style.display = 'none';
 }
 
 // Pick a female voice for read-aloud (names vary by device, so match known female ones and avoid male ones).
@@ -305,7 +305,7 @@ async function send(text) {
 
 $('f').addEventListener('submit', (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; stopMic(); send(v); });
 $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
-$('newChat').onclick = async () => { await saveChat(); chatId = newId(); store.set('bridgette.chatId', chatId); history = []; saveLocal(); render(); };
+$('newChat').onclick = async () => { await saveChat(); await markPicked(); chatId = newId(); store.set('bridgette.chatId', chatId); history = []; saveLocal(); render(); };
 $('refreshBtn').onclick = () => location.reload();
 $('histClose').onclick = () => { $('history').style.display = 'none'; };
 // Selfie Video: free talking/singing video from a photo (runs on a free Hugging Face tool)
@@ -488,6 +488,15 @@ $('passGo').onclick = async () => {
 };
 $('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passGo').click(); });
 
+// He just picked or started a chat on THIS device: remember the newest cloud time right now,
+// so we only jump to another chat if another device talks AFTER this moment.
+async function markPicked() {
+  window._pickedAt = Date.now();
+  try {
+    const r = await fetch('/api/chats', { headers: { 'x-bridgette-key': key } });
+    if (r.ok) { const j = await r.json(); const t = (j.chats || []).reduce((m, c) => Math.max(m, Number(c.updated) || 0), 0); if (t) window._pickedAt = t; }
+  } catch (e) {}
+}
 // Pick up the most recent conversation from any device (phone, PC, tablet)
 async function syncLatestChat() {
   try {
@@ -498,6 +507,7 @@ async function syncLatestChat() {
     if (!top || $('send').disabled) return;
     // Same chat: only reload if the cloud copy has moved on (new messages from another device)
     if (top.id === chatId && top.updated === window._lastSeen) return;
+    if (top.id !== chatId && window._pickedAt && Number(top.updated) <= window._pickedAt) return;
     window._lastSeen = top.updated;
     // Load it straight in (no re-save, so devices don't keep flipping each other's chats)
     const c = await fetch('/api/chats/' + encodeURIComponent(top.id), { headers: { 'x-bridgette-key': key } });
