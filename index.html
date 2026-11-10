@@ -1,1 +1,712 @@
-My phone photos aren't syncing to OneDrive on my laptop like they used to. Help me fix it.
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bridgette</title>
+<meta name="theme-color" content="#1b3a5c">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.149.0/three.min.js"></script>
+<style>
+  :root { --bg:#0f1e2e; --panel:#16293d; --me:#2f6fae; --her:#1f3a55; --text:#f2f6fa; --muted:#9fb3c8; --accent:#ffb347; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:18px/1.45 system-ui, Segoe UI, Roboto, Arial, sans-serif; }
+  #app { display:flex; flex-direction:column; height:100dvh; max-width:900px; margin:0 auto; }
+  header { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 16px; background:var(--panel); }
+  header img { width:36px; height:36px; border-radius:8px; }
+  header h1 { font-size:22px; margin:0; flex:1; }
+  header button { background:none; border:1px solid #3a5674; color:var(--muted); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; }
+  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:85%; padding:12px 14px; border-radius:14px; white-space:pre-wrap; word-wrap:break-word; }
+  .me { align-self:flex-end; background:var(--me); }
+  .her { align-self:flex-start; background:var(--her); }
+  .her a { color:var(--accent); font-weight:bold; }
+  .meta { font-size:12px; color:var(--muted); margin-top:6px; }
+  .steps { font-size:13px; color:var(--muted); margin-top:6px; }
+  .err { align-self:center; color:#ff9a9a; font-size:15px; }
+  form { display:flex; gap:8px; padding:12px 16px calc(12px + env(safe-area-inset-bottom)); background:var(--panel); }
+  @media (max-width:480px) { form { gap:6px; padding-left:10px; padding-right:10px; } form .btn { min-width:44px; padding:0 10px; font-size:16px; } }
+  textarea { flex:1; resize:none; border-radius:12px; border:1px solid #3a5674; background:#0f1e2e; color:var(--text); padding:12px; font:inherit; max-height:160px; }
+  .btn { border:none; border-radius:12px; padding:0 16px; font-size:18px; font-weight:bold; cursor:pointer; min-width:56px; }
+  #send { background:var(--accent); color:#222; }
+  #mic { background:#2b4866; color:#fff; }
+  #mic.on { background:#d9534f; }
+  #login { position:fixed; inset:0; background:var(--bg); display:none; align-items:center; justify-content:center; padding:16px; }
+  #login div { background:var(--panel); padding:24px; border-radius:16px; width:100%; max-width:360px; text-align:center; }
+  #login input { width:100%; padding:12px; font:inherit; border-radius:10px; border:1px solid #3a5674; background:#0f1e2e; color:var(--text); margin:12px 0; }
+  .thinking { align-self:flex-start; color:var(--muted); font-style:italic; }
+  #attach { background:#2b4866; color:#fff; }
+  .amenu { display:block; width:200px; margin:4px 0; padding:16px; font-size:20px; font-weight:bold; text-align:left; border:0; border-radius:10px; background:#2b4866; color:#fff; cursor:pointer; }
+  #pending { display:flex; flex-wrap:wrap; gap:8px; padding:0 16px; }
+  #pending:empty { display:none; }
+  .chip { display:flex; align-items:center; gap:6px; background:var(--panel); border:1px solid #3a5674; border-radius:10px; padding:4px 8px; font-size:13px; color:var(--muted); }
+  .chip img { width:32px; height:32px; object-fit:cover; border-radius:6px; }
+  .chip button { background:none; border:none; color:#ff9a9a; font-size:16px; cursor:pointer; padding:0 2px; }
+  .msg img.photo { max-width:220px; border-radius:10px; margin-top:6px; display:block; }
+  #history, #brains { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-start; justify-content:center; padding:40px 16px; z-index:20; }
+  #history .sheet, #brains .sheet { background:var(--panel); border-radius:16px; width:100%; max-width:480px; max-height:80vh; overflow:auto; }
+  .sheetbar { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; position:sticky; top:0; background:var(--panel); border-bottom:1px solid #223a52; }
+  .histrow { padding:12px 16px; border-bottom:1px solid #223a52; cursor:pointer; }
+  .histrow:hover { background:#1c344c; }
+  .histrow.current { background:#1f4f7a; border-left:5px solid #ffd54a; }
+  .hcurrent { display:block; color:#ffd54a; font-weight:700; font-size:14px; margin-bottom:4px; }
+  .hrename { margin-top:6px; font-size:13px; padding:4px 10px; }
+  .htitle { display:block; color:var(--text); font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hwhen { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+  #avatarWrap { height:210px; background:radial-gradient(circle at 50% 38%, #27496a 0%, #12243a 68%); display:flex; align-items:center; justify-content:center; overflow:hidden; border-bottom:1px solid #223a52; }
+  #avatarWrap.hidden { display:none; }
+  #avatar { width:100%; height:100%; display:block; }
+  @media (max-height:700px){ #avatarWrap { height:170px; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <img src="/icon-192.png" alt="">
+    <h1>Bridgette</h1>
+    <button id="laptopBtn" title="Let this device use the laptop">💻 Laptop</button>
+    <button id="gmailBtn" title="Connect Gmail">✉️ Gmail</button>
+    <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
+    <button id="repeatBtn" title="Say the last answer again">🔁 Repeat</button>
+    <button id="faceToggle" title="Show or hide Bridgette's face">👩 Face</button>
+    <button id="photoBtn" title="Send a photo straight from your pictures">📷 Photo</button>
+    <button id="brainBtn" title="Switch which AI she uses">🧠 AIs</button>
+    <button id="videoBtn" title="Turn a selfie into a talking or singing video">🎬 Selfie Video</button>
+    <button id="histBtn" title="Past chats">🕘 History</button>
+    <button id="refreshBtn" title="Refresh Bridgette">🔄 Refresh</button>
+    <button id="newChat">New chat</button>
+  </header>
+  <div id="dueBanner" style="display:none;background:#5a1f1f;color:#fff;padding:10px 14px;font-size:15px;border-bottom:2px solid #ffd54a"></div>
+  <div id="avatarWrap"><canvas id="avatar"></canvas></div>
+  <div id="log"></div>
+  <div id="pending"></div>
+  <form id="f">
+    <button type="button" class="btn" id="attach" title="Add a photo or file">📎</button>
+    <input type="file" id="file" multiple style="display:none">
+    <input type="file" id="photo" accept="image/*" multiple style="display:none">
+    <input type="file" id="camera" accept="image/*" capture="environment" style="display:none">
+    <div id="attachMenu" style="display:none;position:fixed;left:12px;bottom:84px;z-index:50;background:#1b3a5c;border-radius:14px;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.5)">
+      <button type="button" class="amenu" id="amCamera">📸 Camera</button>
+      <button type="button" class="amenu" id="amPhotos">🖼️ Photos</button>
+      <button type="button" class="amenu" id="amFile">📄 File</button>
+    </div>
+    <button type="button" class="btn" id="mic" title="Talk">🎤</button>
+    <textarea id="q" rows="2" placeholder="Tap 🎤 to talk (tap again to stop), then press Send…"></textarea>
+    <button class="btn" id="send">Send</button>
+    <button type="button" class="btn" id="stopBtn" title="Stop her right now" style="background:#c0392b;color:#fff">Stop</button>
+  </form>
+</div>
+<div id="brains"><div class="sheet">
+  <div class="sheetbar"><b>Which AI (brain)</b><button id="brainClose">Close</button></div>
+  <div id="brainList"></div>
+  <p style="color:var(--muted);padding:12px 16px;font-size:13px;margin:0">Star = try this one first. Switch off any you don't want her to use. She still auto-switches if one's busy.</p>
+</div></div>
+<div id="selfieVideo" style="position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;flex-direction:column;z-index:25;padding:10px">
+  <div class="sheetbar" style="background:var(--panel);border-radius:12px 12px 0 0"><b>🎬 Selfie Video — your photo + a voice recording or song</b>
+    <span><a id="svOpen" href="https://shalomking-infinitetalk.hf.space" target="_blank" rel="noopener" style="color:var(--accent);margin-right:12px">Open full screen</a><button id="svClose">Close</button></span></div>
+  <iframe id="svFrame" title="Selfie Video" allow="microphone; camera; clipboard-write" style="flex:1;width:100%;border:0;background:#fff;border-radius:0 0 12px 12px"></iframe>
+</div>
+<div id="history"><div class="sheet">
+  <div class="sheetbar"><b>Past chats</b><button id="histClose">Close</button></div>
+  <div id="histList"></div>
+</div></div>
+<div id="login"><div>
+  <img src="/icon-192.png" alt="" width="72">
+  <h2>Bridgette</h2>
+  <p>Enter your passphrase</p>
+  <input id="pass" type="password" autocomplete="current-password">
+  <button class="btn" id="passGo" style="background:var(--accent);padding:12px 24px">Open</button>
+</div></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+};
+let history = store.get('bridgette.history', []);
+let key = store.get('bridgette.key', '');
+let speak = store.get('bridgette.speak', false);
+let laptopCode = store.get('bridgette.laptopCode', '');
+let brainPref = store.get('bridgette.brainPref', { preferred: '', disabled: [] });
+
+// Photos and files Freedom attaches before sending.
+let pending = [];
+function fileToDataURL(file) {
+  return new Promise((resolve) => {
+    const rd = new FileReader();
+    rd.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 1024; let w = img.width, h = img.height;
+        if (w > max || h > max) { const s = Math.min(max / w, max / h); w = Math.round(w * s); h = Math.round(h * s); }
+        try { const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(img, 0, 0, w, h); resolve(c.toDataURL('image/jpeg', 0.85)); }
+        catch (e) { resolve(rd.result); }
+      };
+      img.onerror = () => resolve(rd.result);
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+function renderPending() {
+  const el = $('pending'); el.innerHTML = '';
+  pending.forEach((p, i) => {
+    const chip = document.createElement('div'); chip.className = 'chip';
+    if (p.kind === 'image') { const im = document.createElement('img'); im.src = p.url; chip.appendChild(im); }
+    const nm = document.createElement('span'); nm.textContent = p.name.length > 18 ? p.name.slice(0, 16) + '…' : p.name; chip.appendChild(nm);
+    const x = document.createElement('button'); x.textContent = '✕'; x.onclick = () => { pending.splice(i, 1); renderPending(); }; chip.appendChild(x);
+    el.appendChild(chip);
+  });
+}
+function lightenMsg(m) {
+  if (Array.isArray(m.content)) return { role: m.role, content: m.content.map((p) => p && p.type === 'image_url' ? '[photo]' : (p && p.text) || '').filter(Boolean).join(' ') || '[photo]' };
+  return m;
+}
+function saveLocal() { try { store.set('bridgette.history', history.map(lightenMsg)); } catch (e) {} }
+function contentToHtml(content) {
+  if (typeof content === 'string') {
+    let html = linkify(content);
+    for (const u of (content.match(/https?:\/\/[^\s)\]]+\.(?:png|jpg|jpeg|webp)/gi) || [])) html += '<img class="photo" src="' + u + '">';
+    return html;
+  }
+  if (Array.isArray(content)) {
+    let html = '';
+    for (const p of content) {
+      if (p && p.type === 'text' && p.text) html += linkify(p.text);
+      else if (p && p.type === 'image_url' && p.image_url) html += '<img class="photo" src="' + p.image_url.url + '">';
+    }
+    return html || '[photo]';
+  }
+  return '';
+}
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+let chatId = store.get('bridgette.chatId', '');
+if (!chatId) { chatId = newId(); store.set('bridgette.chatId', chatId); }
+
+// A chat's title is its first thing Freedom said.
+function chatTitleOf(msgs) {
+  const u = (msgs || []).find((m) => m.role === 'user');
+  let t = u ? u.content : 'Chat';
+  if (Array.isArray(t)) t = '[photo]';
+  return String(t || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';
+}
+// A copy of every chat is kept right on this device too, so History always works
+// even when Bridgette's cloud list is slow to catch up.
+function localChats() { return store.get('bridgette.chatIndex', []); }
+function localChatSave(id, msgs) {
+  const light = (msgs || []).map(lightenMsg);
+  store.set('bridgette.chat.' + id, light);
+  const idx = localChats().filter((c) => c.id !== id);
+  idx.unshift({ id, title: (store.get('bridgette.titles', {})[id]) || chatTitleOf(light), updated: Date.now() });
+  store.set('bridgette.chatIndex', idx.slice(0, 80));
+}
+function localChatGet(id) { return store.get('bridgette.chat.' + id, null); }
+
+// Save the current conversation — on this device right away, and to Bridgette's cloud so it's on any device.
+async function saveChat() {
+  if (!history.length) return;
+  localChatSave(chatId, history);
+  try {
+    // If another device already added more to this chat, don't write over it with this older copy
+    const c = await fetch('/api/chats/' + encodeURIComponent(chatId), { headers: { 'x-bridgette-key': key } });
+    if (c.ok) { const v = await c.json(); if (v.messages && v.messages.length > history.length) return; }
+  } catch (e) {}
+  try {
+    await fetch('/api/chats', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridgette-key': key },
+      body: JSON.stringify({ id: chatId, messages: history, title: chatTitleOf(history) }) });
+  } catch (e) {}
+}
+async function openChat(id) {
+  let msgs = null;
+  try {
+    const r = await fetch('/api/chats/' + encodeURIComponent(id), { headers: { 'x-bridgette-key': key } });
+    if (r.ok) { const j = await r.json(); if (j.messages) msgs = j.messages; }
+  } catch (e) {}
+  if (!msgs) msgs = localChatGet(id);
+  if (!msgs) { $('histList').textContent = 'That chat is still saving — give it a moment and tap it again.'; return; }
+  await saveChat(); await markPicked(); chatId = id; store.set('bridgette.chatId', chatId); history = msgs; saveLocal(); render(); $('history').style.display = 'none';
+}
+
+// Pick a female voice for read-aloud (names vary by device, so match known female ones and avoid male ones).
+let chosenVoice = null;
+function pickFemaleVoice() {
+  const voices = (window.speechSynthesis && speechSynthesis.getVoices()) || [];
+  if (!voices.length) return null;
+  const en = voices.filter((v) => /^en/i.test(v.lang));
+  const pool = en.length ? en : voices;
+  const prefer = ['zira', 'aria', 'jenny', 'michelle', 'eva', 'hazel', 'susan', 'samantha', 'sonia', 'libby', 'emma', 'female', 'google us english'];
+  for (const name of prefer) { const m = pool.find((v) => v.name.toLowerCase().includes(name)); if (m) return m; }
+  const male = /(david|mark|george|james|guy|ryan|male|paul|fred|daniel|alex|thomas)/i;
+  return pool.find((v) => !male.test(v.name)) || pool[0];
+}
+function loadVoice() { chosenVoice = pickFemaleVoice(); }
+// Read text out loud in her voice (used for new answers and the Repeat button)
+function sayOutLoud(text) {
+  if (!('speechSynthesis' in window) || !text) return;
+  const u = new SpeechSynthesisUtterance(String(text).replace(/https?:\/\/\S+/g, 'link'));
+  if (!chosenVoice) loadVoice(); if (chosenVoice) u.voice = chosenVoice;
+  u.onstart = () => { try { window.bridgetteAvatar && window.bridgetteAvatar.startTalking(); } catch (e) {} };
+  u.onend = () => { try { window.bridgetteAvatar && window.bridgetteAvatar.stopTalking(); } catch (e) {} };
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+}
+if ('speechSynthesis' in window) { loadVoice(); speechSynthesis.onvoiceschanged = loadVoice; }
+
+function linkify(text) {
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // [Open the grant](https://...) becomes a clean clickable button-style link; bare links still work.
+  return esc.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+            .replace(/(^|[^"'>])(https?:\/\/[^\s)\]<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+            .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+            .replace(/^#{1,3} (.+)$/gm, '<b>$1</b>');
+}
+function add(role, text, extra) {
+  const d = document.createElement('div');
+  d.className = 'msg ' + (role === 'user' ? 'me' : 'her');
+  d.innerHTML = contentToHtml(text);
+  if (extra) d.appendChild(extra);
+  $('log').appendChild(d);
+  $('log').scrollTop = $('log').scrollHeight;
+  return d;
+}
+function render() {
+  $('log').innerHTML = '';
+  if (!history.length) add('assistant', "Hi Freedom. I'm Bridgette. What are we doing today?");
+  for (const m of history) add(m.role, m.content);
+}
+function updateSpeakBtn() { $('speakToggle').textContent = speak ? '🔊 Voice on' : '🔈 Voice off'; }
+
+async function send(text) {
+  if (!text.trim() && !pending.length) return;
+  await syncLatestChat(); // catch up first so this device never writes over newer messages
+  let content = text;
+  if (pending.length) {
+    const parts = [];
+    let textBlock = text;
+    for (const p of pending.filter((p) => p.kind === 'text')) textBlock += '\n\n[File: ' + p.name + ']\n' + p.content;
+    parts.push({ type: 'text', text: textBlock.trim() || 'Have a look at this.' });
+    for (const p of pending.filter((p) => p.kind === 'image')) parts.push({ type: 'image_url', image_url: { url: p.url } });
+    content = parts;
+    pending = []; renderPending();
+  }
+  history.push({ role: 'user', content });
+  saveLocal();
+  add('user', content);
+  saveChat(); // show the question on his other devices right away
+  const t = document.createElement('div'); t.className = 'thinking'; t.textContent = 'Bridgette is working…';
+  $('log').appendChild(t); $('log').scrollTop = $('log').scrollHeight;
+  $('send').disabled = true;
+  const ctl = new AbortController(); window._bridgetteCtl = ctl;
+  try {
+    const r = await fetch('/api/chat', { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'x-bridgette-key': key, 'x-laptop-code': laptopCode },
+      body: JSON.stringify({ messages: history, brainPref }) });
+    const j = await r.json();
+    t.remove();
+    if (r.status === 401) { showLogin(); history.pop(); return; }
+    if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; $('log').appendChild(e); history.pop(); saveLocal(); return; }
+    history.push({ role: 'assistant', content: j.reply });
+    saveLocal();
+    const meta = document.createElement('div'); meta.className = 'meta';
+    meta.textContent = 'brain: ' + j.brain + (j.steps && j.steps.length ? ' · used: ' + j.steps.map(s => s.tool).join(', ') : '');
+    add('assistant', j.reply, meta);
+    saveChat();
+    if (speak) sayOutLoud(j.reply);
+  } catch (e) {
+    t.remove();
+    if (ctl.signal.aborted) { const s2 = document.createElement('div'); s2.className = 'meta'; s2.textContent = 'Stopped.'; $('log').appendChild(s2); $('log').scrollTop = $('log').scrollHeight; saveLocal(); saveChat(); return; }
+    const er = document.createElement('div'); er.className = 'err'; er.textContent = 'Could not reach Bridgette: ' + e.message; $('log').appendChild(er);
+    history.pop(); saveLocal();
+  } finally { $('send').disabled = false; if (window._bridgetteCtl === ctl) window._bridgetteCtl = null; }
+}
+// Stop button: cut her off — stops the job she's working on and stops her talking
+$('stopBtn').onclick = () => {
+  try { if (window._bridgetteCtl) window._bridgetteCtl.abort(); } catch (e) {}
+  try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) {}
+  try { window.bridgetteAvatar && window.bridgetteAvatar.stopTalking(); } catch (e) {}
+};
+
+$('f').addEventListener('submit', (e) => { e.preventDefault(); const v = $('q').value; $('q').value = ''; stopMic(); send(v); });
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('f').requestSubmit(); } });
+$('newChat').onclick = async () => { await saveChat(); await markPicked(); chatId = newId(); store.set('bridgette.chatId', chatId); history = []; saveLocal(); render(); };
+$('refreshBtn').onclick = () => location.reload();
+$('histClose').onclick = () => { $('history').style.display = 'none'; };
+// Selfie Video: free talking/singing video from a photo (runs on a free Hugging Face tool)
+$('videoBtn').onclick = () => { window.open('https://www.hedra.com', '_blank', 'noopener'); };
+$('svClose').onclick = () => { $('selfieVideo').style.display = 'none'; };
+$('histBtn').onclick = async () => {
+  $('history').style.display = 'flex'; $('histList').textContent = 'Loading…';
+  let server = [];
+  try { const r = await fetch('/api/chats', { headers: { 'x-bridgette-key': key } }); const j = await r.json(); server = j.chats || []; } catch (e) {}
+  // Merge what's on this device with what's in the cloud (newest wins), so nothing goes missing.
+  const byId = {};
+  for (const c of localChats()) byId[c.id] = { id: c.id, title: c.title || 'Chat', updated: c.updated || 0 };
+  for (const c of server) { const ex = byId[c.id]; if (!ex || (c.updated || 0) >= (ex.updated || 0)) byId[c.id] = { id: c.id, title: c.title || (ex && ex.title) || 'Chat', updated: c.updated || (ex && ex.updated) || 0 }; }
+  const myNames = store.get('bridgette.titles', {});
+  for (const c of server) if (c.custom && byId[c.id]) byId[c.id].title = c.title;
+  for (const id in myNames) if (byId[id]) byId[id].title = myNames[id];
+  const chats = Object.keys(byId).map((k) => byId[k]).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  if (!chats.length) { $('histList').innerHTML = '<p style="color:var(--muted);padding:16px">No saved chats yet.</p>'; return; }
+  $('histList').innerHTML = '';
+  for (const c of chats) {
+    const row = document.createElement('div'); row.className = 'histrow' + (c.id === chatId ? ' current' : '');
+    const t = document.createElement('span'); t.className = 'htitle'; t.textContent = c.title || 'Chat';
+    const w = document.createElement('span'); w.className = 'hwhen'; w.textContent = c.updated ? new Date(c.updated).toLocaleString() : '';
+    const rn = document.createElement('button'); rn.textContent = '✏️ Rename'; rn.className = 'hrename';
+    rn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const name = prompt('New name for this chat:', t.textContent);
+      if (!name || !name.trim()) return;
+      const clean = name.trim().slice(0, 80);
+      const names = store.get('bridgette.titles', {}); names[c.id] = clean; store.set('bridgette.titles', names);
+      t.textContent = clean;
+      const idx = localChats(); const e = idx.find((x) => x.id === c.id); if (e) { e.title = clean; store.set('bridgette.chatIndex', idx); }
+      try { await fetch('/api/chats/' + encodeURIComponent(c.id), { method: 'PATCH', headers: { 'content-type': 'application/json', 'x-bridgette-key': key }, body: JSON.stringify({ title: clean }) }); } catch (e) {}
+    };
+    if (c.id === chatId) { const cur = document.createElement('span'); cur.className = 'hcurrent'; cur.textContent = '● Current chat'; row.appendChild(cur); }
+    row.appendChild(t); row.appendChild(w); row.appendChild(rn); row.onclick = () => openChat(c.id);
+    $('histList').appendChild(row);
+  }
+};
+// Gmail: connect (or show it's connected)
+async function gmailStatus() {
+  try { const r = await fetch('/api/gmail/status', { headers: { 'x-bridgette-key': key } }); const j = await r.json(); $('gmailBtn').textContent = j.connected ? '✉️ Gmail ✓' : '✉️ Gmail'; return j; } catch (e) { return {}; }
+}
+$('gmailBtn').onclick = async () => {
+  const st = await gmailStatus();
+// Grant deadline warning banner (due in 14 days or less and not sent yet)
+async function checkGrantsDue() {
+  try {
+    const r = await fetch('/api/grants/due', { headers: { 'x-bridgette-key': key } }); const j = await r.json();
+    const b = $('dueBanner');
+    if (!j.due || !j.due.length) { b.style.display = 'none'; return; }
+    b.textContent = '⏰ Grant deadlines: ' + j.due.map((g) => g.funder + (g.days_left < 0 ? ' — PAST DUE' : g.days_left === 0 ? ' — due TODAY' : ' — ' + g.days_left + ' day' + (g.days_left === 1 ? '' : 's') + ' left')).join('  •  ');
+    b.style.display = 'block';
+  } catch (e) {}
+}
+checkGrantsDue(); setInterval(checkGrantsDue, 30 * 60 * 1000);
+  if (st.connected && !confirm('Gmail is already connected. Connect again?')) return;
+  try {
+    const r = await fetch('/api/gmail/start', { headers: { 'x-bridgette-key': key } }); const j = await r.json();
+    if (j.url) location.href = j.url; else alert(j.error || 'Could not start Gmail sign-in.');
+  } catch (e) { alert('Could not reach Bridgette.'); }
+};
+gmailStatus();
+$('repeatBtn').onclick = () => {
+  const last = [...history].reverse().find((m) => m.role === 'assistant' && typeof m.content === 'string');
+  sayOutLoud(last ? last.content : "Hi Freedom. I'm Bridgette. What are we doing today?");
+};
+$('speakToggle').onclick = () => { speak = !speak; store.set('bridgette.speak', speak); updateSpeakBtn(); if (!speak && 'speechSynthesis' in window) { speechSynthesis.cancel(); try { window.bridgetteAvatar && window.bridgetteAvatar.stopTalking(); } catch (e) {} } };
+// Read PDFs and Word files right on this device (the readers load only when needed).
+function loadScript(src) { return new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = src; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); }); }
+async function pdfText(f) {
+  try {
+    if (!window.pdfjsLib) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const pdf = await pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise;
+    let out = '';
+    for (let i = 1; i <= Math.min(pdf.numPages, 200); i++) {
+      const c = await (await pdf.getPage(i)).getTextContent();
+      out += '\n--- Page ' + i + ' ---\n' + c.items.map((it) => it.str + (it.hasEOL ? '\n' : ' ')).join('');
+    }
+    return out.trim().length > 20 ? out : '(This PDF has no typed text — it looks like scanned pictures. Take a photo or screenshot of the page and send that instead.)';
+  } catch (e) { return '(Could not open this PDF: ' + (e.message || e) + ')'; }
+}
+async function docxText(f) {
+  try {
+    if (!window.JSZip) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+    const z = await JSZip.loadAsync(await f.arrayBuffer());
+    const xml = await z.file('word/document.xml').async('string');
+    const d = document.createElement('textarea');
+    d.innerHTML = xml.replace(/<\/w:p>/g, '\n').replace(/<w:tab[^>]*\/>/g, '\t').replace(/<[^>]+>/g, '');
+    return d.value;
+  } catch (e) { return '(Could not open this Word file: ' + (e.message || e) + ')'; }
+}
+// 📎 opens a choice: Camera, Photos, or File
+$('attach').onclick = (e) => { e.stopPropagation(); const m = $('attachMenu'); m.style.display = m.style.display === 'none' ? 'block' : 'none'; };
+document.addEventListener('click', (e) => { const m = $('attachMenu'); if (m && !m.contains(e.target)) m.style.display = 'none'; });
+$('amCamera').onclick = () => { $('attachMenu').style.display = 'none'; $('camera').click(); };
+$('amPhotos').onclick = () => { $('attachMenu').style.display = 'none'; $('photo').click(); };
+$('amFile').onclick = () => { $('attachMenu').style.display = 'none'; $('file').click(); };
+$('file').onchange = async (e) => {
+  for (const f of e.target.files) {
+    try {
+      if (f.type && f.type.indexOf('image/') === 0) { pending.push({ kind: 'image', url: await fileToDataURL(f), name: f.name }); }
+      else if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') { pending.push({ kind: 'text', name: f.name, content: (await pdfText(f)).slice(0, 60000) }); }
+      else if (/\.docx$/i.test(f.name)) { pending.push({ kind: 'text', name: f.name, content: (await docxText(f)).slice(0, 60000) }); }
+      else { const t = await f.text(); pending.push({ kind: 'text', name: f.name, content: t.slice(0, 20000) }); }
+    } catch (err) {}
+  }
+  renderPending(); e.target.value = '';
+};
+// Direct photo button: filters to pictures (opens the gallery straight away on a tablet/phone).
+$('photoBtn').onclick = () => $('photo').click();
+$('photo').onchange = $('file').onchange;
+$('camera').onchange = $('file').onchange;
+
+// voice input
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, listening = false, before = '';
+function stopMic() { if (rec && listening) { listening = false; try { rec.stop(); } catch (e) {} } before = ''; const m = $('mic'); if (m) m.classList.remove('on'); }
+if (SR) {
+  // Keeps listening through pauses until Freedom taps the mic again; turns off when he sends.
+  rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true;
+  rec.onresult = (e) => { $('q').value = (before + ' ' + Array.from(e.results).map(r => r[0].transcript).join('')).trim(); };
+  rec.onend = () => { if (listening) { before = $('q').value; try { rec.start(); } catch (err) {} } else { $('mic').classList.remove('on'); } };
+  $('mic').onclick = () => {
+    if (listening) { listening = false; rec.stop(); $('mic').classList.remove('on'); $('q').focus(); }
+    else { listening = true; before = $('q').value; $('mic').classList.add('on'); try { rec.start(); } catch (err) {} }
+  };
+} else { $('mic').style.display = 'none'; }
+
+// Laptop code: typed once on this device, remembered here.
+async function checkLaptop() {
+  if (!laptopCode) { $('laptopBtn').textContent = '💻 Laptop'; return false; }
+  try {
+    const r = await fetch('/api/status?laptopcode=1', { headers: { 'x-bridgette-key': key, 'x-laptop-code': laptopCode } });
+    const j = await r.json();
+    $('laptopBtn').textContent = j.codeOk ? '💻 Laptop ✔' : '💻 Laptop';
+    return !!j.codeOk;
+  } catch (e) { return false; }
+}
+$('laptopBtn').onclick = async () => {
+  const c = prompt('Type the laptop code (from the Bridgette Link setup). Leave empty to turn laptop access off on this device.', '');
+  if (c === null) return;
+  laptopCode = c.trim(); store.set('bridgette.laptopCode', laptopCode);
+  if (!laptopCode) { $('laptopBtn').textContent = '💻 Laptop'; return; }
+  const ok = await checkLaptop();
+  add('assistant', ok ? 'Laptop code saved on this device. I can work on your laptop now.' : 'That laptop code did not match. Tap 💻 Laptop and try again.');
+};
+
+// Switch which AI (brain) she uses — pick one to try first, or switch some off.
+$('brainClose').onclick = () => { $('brains').style.display = 'none'; };
+$('brainBtn').onclick = async () => {
+  $('brains').style.display = 'flex'; $('brainList').textContent = 'Loading…';
+  try {
+    const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } });
+    const j = await r.json();
+    const names = (j.brains || []).map((s) => String(s).split(' (')[0]);
+    if (!names.length) { $('brainList').innerHTML = '<p style="color:var(--muted);padding:16px">No AIs are set up yet.</p>'; return; }
+    renderBrains(names);
+  } catch (e) { $('brainList').textContent = 'Could not load.'; }
+};
+function renderBrains(names) {
+  $('brainList').innerHTML = '';
+  for (const name of names) {
+    const disabled = (brainPref.disabled || []).includes(name);
+    const row = document.createElement('div'); row.className = 'histrow' + (c.id === chatId ? ' current' : ''); row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '12px';
+    const star = document.createElement('button'); star.textContent = brainPref.preferred === name ? '★' : '☆';
+    star.style.cssText = 'background:none;border:none;color:var(--accent);font-size:22px;cursor:pointer;padding:0';
+    const label = document.createElement('span'); label.className = 'htitle'; label.style.flex = '1'; label.textContent = name;
+    const toggle = document.createElement('button'); toggle.textContent = disabled ? 'Off' : 'On';
+    toggle.style.cssText = 'border:1px solid #3a5674;border-radius:8px;padding:6px 16px;cursor:pointer;font-weight:bold;background:none;color:' + (disabled ? 'var(--muted)' : '#8fe388');
+    star.onclick = () => { brainPref.preferred = brainPref.preferred === name ? '' : name; store.set('bridgette.brainPref', brainPref); renderBrains(names); };
+    toggle.onclick = () => { const d = new Set(brainPref.disabled || []); if (d.has(name)) d.delete(name); else d.add(name); brainPref.disabled = [...d]; store.set('bridgette.brainPref', brainPref); renderBrains(names); };
+    row.appendChild(star); row.appendChild(label); row.appendChild(toggle);
+    $('brainList').appendChild(row);
+  }
+}
+
+function showLogin() { $('login').style.display = 'flex'; $('pass').focus(); }
+$('passGo').onclick = async () => {
+  key = $('pass').value; store.set('bridgette.key', key);
+  const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } });
+  if (r.ok) { $('login').style.display = 'none'; } else { $('pass').value = ''; $('pass').placeholder = 'Wrong passphrase'; }
+};
+$('pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('passGo').click(); });
+
+// He just picked or started a chat on THIS device: remember the newest cloud time right now,
+// so we only jump to another chat if another device talks AFTER this moment.
+async function markPicked() {
+  window._pickedAt = Date.now();
+  try {
+    const r = await fetch('/api/chats', { headers: { 'x-bridgette-key': key } });
+    if (r.ok) { const j = await r.json(); const t = (j.chats || []).reduce((m, c) => Math.max(m, Number(c.updated) || 0), 0); if (t) window._pickedAt = t; }
+  } catch (e) {}
+}
+// Pick up the most recent conversation from any device (phone, PC, tablet)
+async function syncLatestChat() {
+  try {
+    const r = await fetch('/api/chats', { headers: { 'x-bridgette-key': key } });
+    if (!r.ok) return;
+    const j = await r.json();
+    const top = j.chats && j.chats[0];
+    if (!top || $('send').disabled) return;
+    // Same chat: only reload if the cloud copy has moved on (new messages from another device)
+    if (top.id === chatId && top.updated === window._lastSeen) return;
+    if (top.id !== chatId && window._pickedAt && Number(top.updated) <= window._pickedAt) return;
+    window._lastSeen = top.updated;
+    // Load it straight in (no re-save, so devices don't keep flipping each other's chats)
+    const c = await fetch('/api/chats/' + encodeURIComponent(top.id), { headers: { 'x-bridgette-key': key } });
+    if (!c.ok) return;
+    const v = await c.json();
+    if (!v.messages || !v.messages.length) return;
+    if (top.id === chatId && v.messages.length <= history.length) return;
+    chatId = top.id; store.set('bridgette.chatId', chatId); history = v.messages; saveLocal(); render();
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncLatestChat(); });
+window.addEventListener('focus', () => syncLatestChat());
+// Keep checking while the screen is open (PC/tablet left on), so it catches up on its own
+setInterval(() => { if (document.visibilityState === 'visible') syncLatestChat(); }, 5000);
+(async () => {
+  updateSpeakBtn(); render(); checkLaptop(); syncLatestChat();
+  try { const r = await fetch('/api/status', { headers: { 'x-bridgette-key': key } }); if (r.status === 401) showLogin(); } catch (e) {}
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+})();
+</script>
+<script>
+// ---------- Bridgette's 3D face ----------
+(function () {
+  var wrap = document.getElementById('avatarWrap');
+  var canvas = document.getElementById('avatar');
+  var btn = document.getElementById('faceToggle');
+  function getFacePref(){ try { return localStorage.getItem('bridgette.face') !== '0'; } catch(e){ return true; } }
+  function setFacePref(v){ try { localStorage.setItem('bridgette.face', v ? '1':'0'); } catch(e){} }
+
+  if (!window.THREE || !canvas) { if (wrap) wrap.classList.add('hidden'); return; }
+
+  var renderer, scene, camera, head, eyesL, eyesR, mouth, mouthInner, upperLidL, upperLidR;
+  var talking = false, mouthOpen = 0, blink = 0, nextBlink = 2 + Math.random()*3, running = false;
+
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+    camera.position.set(0, 0.15, 5.6);
+    camera.lookAt(0, 0.1, 0);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+    var key = new THREE.DirectionalLight(0xffffff, 0.95); key.position.set(-3, 4, 5); scene.add(key);
+    var fill = new THREE.DirectionalLight(0xbcd3ff, 0.35); fill.position.set(4, -1, 3); scene.add(fill);
+
+    var skin = new THREE.MeshStandardMaterial({ color: 0x6f4631, roughness: 0.82, metalness: 0.02 });
+    head = new THREE.Group(); scene.add(head);
+
+    // round, full face
+    var face = new THREE.Mesh(new THREE.SphereGeometry(1, 42, 42), skin);
+    face.scale.set(1.12, 1.14, 1.02); head.add(face);
+    // fuller lower cheeks / jaw
+    var jaw = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 36), skin);
+    jaw.scale.set(0.98, 0.72, 0.9); jaw.position.set(0, -0.52, 0.05); head.add(jaw);
+    // nose
+    var nose = new THREE.Mesh(new THREE.SphereGeometry(0.2, 20, 20), skin);
+    nose.scale.set(0.9, 1.1, 0.9); nose.position.set(0, -0.12, 1.0); head.add(nose);
+    var nostrilM = new THREE.MeshStandardMaterial({ color: 0x3a241a, roughness: 0.9 });
+    var nL = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 10), nostrilM); nL.position.set(-0.09, -0.2, 1.08); head.add(nL);
+    var nR = nL.clone(); nR.position.x = 0.09; head.add(nR);
+
+    // afro — salt & pepper, built from puffs
+    var afro = new THREE.Group(); head.add(afro);
+    var hairBlack = new THREE.MeshStandardMaterial({ color: 0x1a1612, roughness: 1 });
+    var hairGray = new THREE.MeshStandardMaterial({ color: 0x9b9890, roughness: 1 });
+    var hairSilver = new THREE.MeshStandardMaterial({ color: 0xd7d4cc, roughness: 1 });
+    var puffGeo = new THREE.SphereGeometry(1, 10, 10);
+    for (var i = 0; i < 150; i++) {
+      var u = Math.random(), v = Math.random();
+      var th = Math.acos(2*u - 1), ph = 2*Math.PI*v;
+      var dx = Math.sin(th)*Math.cos(ph), dy = Math.cos(th), dz = Math.sin(th)*Math.sin(ph);
+      if (dy < -0.5) continue;                                   // no hair under the chin
+      if (dz > 0.2 && dy < 0.55) continue;                       // keep the whole front of the face clear (forehead down to chin)
+      var r = Math.random();
+      var mat = r < 0.7 ? hairBlack : (r < 0.92 ? hairGray : hairSilver);
+      var puff = new THREE.Mesh(puffGeo, mat);
+      var rad = 1.16 + Math.random()*0.12;
+      puff.position.set(dx*rad*1.08, dy*rad*1.12 + 0.12, dz*rad*1.04 - 0.04);
+      var s = 0.26 + Math.random()*0.17; puff.scale.set(s, s, s);
+      afro.add(puff);
+    }
+
+    // eyes
+    var white = new THREE.MeshStandardMaterial({ color: 0xf3efe6, roughness: 0.5 });
+    var iris = new THREE.MeshStandardMaterial({ color: 0x241910, roughness: 0.4 });
+    function makeEye(x) {
+      var g = new THREE.Group();
+      var w = new THREE.Mesh(new THREE.SphereGeometry(0.16, 22, 22), white); w.scale.set(1, 1, 0.6); g.add(w);
+      var ir = new THREE.Mesh(new THREE.SphereGeometry(0.08, 18, 18), iris); ir.position.set(0, 0, 0.11); g.add(ir);
+      var pu = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 12), new THREE.MeshStandardMaterial({ color:0x000000 })); pu.position.set(0,0,0.17); g.add(pu);
+      g.position.set(x, 0.14, 0.9); head.add(g); return g;
+    }
+    eyesL = makeEye(-0.36); eyesR = makeEye(0.36);
+    // upper lids (skin) for blinking
+    function makeLid(x){ var l = new THREE.Mesh(new THREE.SphereGeometry(0.19, 20, 20), skin); l.scale.set(1, 0.9, 0.6); l.position.set(x, 0.33, 0.9); head.add(l); return l; }
+    upperLidL = makeLid(-0.36); upperLidR = makeLid(0.36);
+    // eyebrows
+    var browM = new THREE.MeshStandardMaterial({ color: 0x241b14, roughness: 1 });
+    var bL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.08), browM); bL.position.set(-0.36, 0.36, 0.98); bL.rotation.z = -0.12; head.add(bL);
+    var bR = bL.clone(); bR.position.x = 0.36; bR.rotation.z = 0.12; head.add(bR);
+
+    // lips + mouth
+    var lipM = new THREE.MeshStandardMaterial({ color: 0x7c3b37, roughness: 0.6 });
+    mouthInner = new THREE.Mesh(new THREE.SphereGeometry(0.28, 20, 20), new THREE.MeshStandardMaterial({ color: 0x2a1110, roughness: 0.9 }));
+    mouthInner.scale.set(0.9, 0.2, 0.5); mouthInner.position.set(0, -0.62, 0.9); head.add(mouthInner);
+    mouth = new THREE.Group();
+    var upLip = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 12), lipM); upLip.scale.set(1, 0.16, 0.5); upLip.position.set(0, 0.02, 0); mouth.add(upLip);
+    var loLip = new THREE.Mesh(new THREE.SphereGeometry(0.26, 20, 12), lipM); loLip.scale.set(1, 0.2, 0.5); loLip.position.set(0, -0.08, 0); mouth.add(loLip);
+    mouth.position.set(0, -0.62, 0.92); head.add(mouth);
+    // small earrings
+    var gold = new THREE.MeshStandardMaterial({ color: 0xffcf5c, roughness: 0.3, metalness: 0.7 });
+    var eaL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), gold); eaL.position.set(-1.04, -0.42, 0.18); head.add(eaL);
+    var eaR = eaL.clone(); eaR.position.x = 1.04; head.add(eaR);
+
+    function resize() {
+      var w = wrap.clientWidth || 300, h = wrap.clientHeight || 200;
+      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', resize);
+
+    var t0 = performance.now();
+    function loop() {
+      if (!running) return;
+      requestAnimationFrame(loop);
+      var now = performance.now(), t = (now - t0) / 1000, dt = 0.016;
+      // idle sway + breathing
+      head.rotation.y = Math.sin(t * 0.5) * 0.14;
+      head.rotation.x = Math.sin(t * 0.37) * 0.05;
+      head.position.y = Math.sin(t * 1.1) * 0.02;
+      // blinking
+      nextBlink -= dt;
+      if (nextBlink <= 0 && blink === 0) blink = 0.001;
+      if (blink > 0) { blink += dt * 7; if (blink >= 2) { blink = 0; nextBlink = 2 + Math.random() * 3.5; } }
+      var lid = blink > 0 ? Math.sin(Math.min(blink, 1) * Math.PI) : 0; // 0..1..0
+      upperLidL.position.y = 0.33 - lid * 0.2; upperLidR.position.y = 0.33 - lid * 0.2;
+      // talking
+      var target = 0;
+      if (talking) target = 0.5 + 0.5 * Math.sin(t * 19) * (0.6 + 0.4 * Math.sin(t * 7.3));
+      if (target < 0) target = 0;
+      mouthOpen += (target - mouthOpen) * 0.35;
+      var open = mouthOpen * 0.5;
+      mouth.children[1].position.y = -0.08 - open;          // drop lower lip
+      mouthInner.scale.y = 0.08 + open * 1.1;
+      mouthInner.position.y = -0.62 - open * 0.45;
+      renderer.render(scene, camera);
+    }
+    function start(){ if (!running){ running = true; resize(); loop(); } }
+    function stop(){ running = false; }
+
+    window.bridgetteAvatar = {
+      startTalking: function () { talking = true; },
+      stopTalking: function () { talking = false; },
+      show: function () { wrap.classList.remove('hidden'); start(); },
+      hide: function () { wrap.classList.add('hidden'); stop(); }
+    };
+
+    // show/hide button + saved preference
+    if (btn) btn.onclick = function () {
+      var showing = !wrap.classList.contains('hidden');
+      if (showing) { window.bridgetteAvatar.hide(); setFacePref(false); }
+      else { window.bridgetteAvatar.show(); setFacePref(true); }
+    };
+    if (getFacePref()) { wrap.classList.remove('hidden'); start(); }
+    else { wrap.classList.add('hidden'); }
+  } catch (e) {
+    if (wrap) wrap.classList.add('hidden');
+    window.bridgetteAvatar = { startTalking:function(){}, stopTalking:function(){}, show:function(){}, hide:function(){} };
+  }
+})();
+</script>
+</body>
+</html>
