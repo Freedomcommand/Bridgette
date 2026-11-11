@@ -1159,8 +1159,80 @@ function authorized(req, env) {
   return req.headers.get('x-bridgette-key') === env.BRIDGETTE_PASSPHRASE;
 }
 
+// ---------- photos in chats ----------
+// Photos Freedom sends are saved as real files, so they stay in the chat (on every device)
+// instead of turning into "[photo]". Saved chats keep the photo link; the heavy data is dropped.
+async function storeChatPhotos(env, origin, history) {
+  if (!env.BRIDGETTE_KV) return history;
+  const out = [];
+  for (const m of history) {
+    if (!Array.isArray(m.content)) { out.push(m); continue; }
+    const parts = [];
+    for (const p of m.content) {
+      const u = p && p.type === 'image_url' && p.image_url && p.image_url.url;
+      const mm = typeof u === 'string' && u.match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
+      if (mm) {
+        const ext = mm[1].toLowerCase() === 'jpeg' ? 'jpg' : mm[1].toLowerCase();
+        const name = 'photo-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) + '.' + ext;
+        await env.BRIDGETTE_KV.put('file:' + name, mm[2], { metadata: { type: ext, created: new Date().toISOString(), chatPhoto: true } });
+        parts.push({ type: 'image_url', image_url: { url: origin + '/files/' + encodeURIComponent(name) } });
+      } else parts.push(p);
+    }
+    out.push({ role: m.role, content: parts });
+  }
+  return out;
+}
+// The brains get the actual picture data for the most recent photos; older photos become "[photo]" to keep things fast.
+async function photosForBrains(env, origin, history) {
+  let keep = 4;
+  const out = [];
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (!Array.isArray(m.content)) { out.unshift(m); continue; }
+    const parts = [];
+    for (const p of m.content) {
+      if (!(p && p.type === 'image_url')) { if (p && p.text) parts.push({ type: 'text', text: p.text }); continue; }
+      let u = (p.image_url && p.image_url.url) || '';
+      if (keep > 0 && u.startsWith(origin + '/files/') && env.BRIDGETTE_KV) {
+        const name = decodeURIComponent(u.slice((origin + '/files/').length));
+        const rec = await env.BRIDGETTE_KV.getWithMetadata('file:' + name);
+        u = rec.value ? 'data:image/' + (((rec.metadata && rec.metadata.type) || 'jpg') === 'jpg' ? 'jpeg' : rec.metadata.type) + ';base64,' + rec.value : '';
+      }
+      if (keep > 0 && u.startsWith('data:image/')) { parts.push({ type: 'image_url', image_url: { url: u } }); keep--; }
+      else parts.push({ type: 'text', text: '[photo]' });
+    }
+    out.unshift({ role: m.role, content: parts.some((x) => x.type === 'image_url') ? parts : parts.map((x) => x.text).join(' ') || '[photo]' });
+  }
+  return out;
+}
+// Saved chats: keep photo links, drop raw photo data.
+function lightenForSave(c) {
+  if (typeof c === 'string') return c;
+  if (!Array.isArray(c)) return '';
+  const parts = c.filter((p) => p && ((p.type === 'text' && p.text) || (p.type === 'image_url' && p.image_url && /^https?:\/\//.test(p.image_url.url || ''))));
+  if (parts.some((p) => p.type === 'image_url')) return parts.map((p) => p.type === 'text' ? { type: 'text', text: p.text } : { type: 'image_url', image_url: { url: p.image_url.url } });
+  return c.map((p) => (p && p.type === 'image_url') ? '[photo]' : (p && p.text) || '').filter(Boolean).join(' ') || '[photo]';
+}
+function chatTitleFrom(c) {
+  if (typeof c === 'string') return c;
+  if (Array.isArray(c)) { const t = c.filter((p) => p && p.type === 'text' && p.text).map((p) => p.text).join(' ').trim(); return t && t !== 'Have a look at this.' ? t : '[photo]'; }
+  return 'Chat';
+}
+async function saveChatRecord(env, id, msgs, title) {
+  const messages = msgs.filter((m) => m && (typeof m.content === 'string' || Array.isArray(m.content))).slice(-200).map((m) => ({ role: m.role, content: lightenForSave(m.content) }));
+  if (!id || !messages.length) return { error: 'Nothing to save.' };
+  const firstUser = messages.find((m) => m.role === 'user');
+  const t = String(title || (firstUser && chatTitleFrom(firstUser.content)) || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';
+  const body = JSON.stringify({ messages });
+  const prevRec = await env.BRIDGETTE_KV.getWithMetadata('chat:' + id);
+  if (prevRec.value === body) return { ok: true, unchanged: true };
+  const pm = prevRec.metadata || {};
+  await env.BRIDGETTE_KV.put('chat:' + id, body, { metadata: { title: pm.custom ? pm.title : t, custom: !!pm.custom, updated: Date.now() } });
+  return { ok: true };
+}
+
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const origin = url.origin;
 
@@ -1210,7 +1282,26 @@ export default {
           .map((m) => ({ role: m.role, content: m.content }));
         const laptopOk = await laptopCodeOk(env, req.headers.get('x-laptop-code'));
         const brainPref = body.brainPref && typeof body.brainPref === 'object' ? body.brainPref : null;
-        return json(await chat(env, origin, history, { laptopOk, brainPref }));
+        const chatId = String(body.chatId || '').replace(/[^a-z0-9]/gi, '').slice(0, 60);
+        // Save his photos as real files first, so they stay in the chat
+        const saved = await storeChatPhotos(env, origin, history);
+        const lastUser = [...saved].reverse().find((m) => m.role === 'user') || null;
+        // Keep working — and save her answer into the chat — even if his phone drops the connection
+        // (screen off, switched apps), so the answer is waiting when he comes back.
+        const work = (async () => {
+          let result;
+          try { result = await chat(env, origin, await photosForBrains(env, origin, saved), { laptopOk, brainPref }); }
+          catch (e) { result = { error: String(e.message || e) }; }
+          if (chatId && env.BRIDGETTE_KV && result.reply != null) {
+            try { await saveChatRecord(env, chatId, [...saved, { role: 'assistant', content: result.reply || '(no answer)' }]); } catch (e) {}
+          } else if (chatId && env.BRIDGETTE_KV) {
+            try { await saveChatRecord(env, chatId, saved); } catch (e) {}
+          }
+          return result;
+        })();
+        if (ctx && ctx.waitUntil) ctx.waitUntil(work);
+        const result = await work;
+        return json({ ...result, userMsg: lastUser }, result.error ? 500 : 200);
       } catch (e) {
         return json({ error: String(e.message || e) }, 500);
       }
@@ -1306,25 +1397,8 @@ export default {
       if (!env.BRIDGETTE_KV) return json({ error: KV_MISSING }, 503);
       const b = await req.json().catch(() => ({}));
       const id = String(b.id || '').replace(/[^a-z0-9]/gi, '').slice(0, 60);
-      // Keep saved chats small: drop the heavy image data, leaving a [photo] marker.
-      const lighten = (c) => {
-        if (typeof c === 'string') return c;
-        if (Array.isArray(c)) return c.map((p) => (p && p.type === 'image_url') ? '[photo]' : (p && p.text) || '').filter(Boolean).join(' ') || '[photo]';
-        return '';
-      };
-      const messages = Array.isArray(b.messages) ? b.messages.filter((m) => m && (typeof m.content === 'string' || Array.isArray(m.content))).slice(-200).map((m) => ({ role: m.role, content: lighten(m.content) })) : [];
-      if (!id || !messages.length) return json({ error: 'Nothing to save.' }, 400);
-      const firstUser = messages.find((m) => m.role === 'user');
-      const title = String(b.title || (firstUser && firstUser.content) || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';
-      const body = JSON.stringify({ messages });
-      // If nothing changed, don't mark it as the newest chat (stops devices pulling up an old chat)
-      const prevRec = await env.BRIDGETTE_KV.getWithMetadata('chat:' + id);
-      if (prevRec.value === body) return json({ ok: true, unchanged: true });
-      const pm = prevRec.metadata || {};
-      // Keep a name Freedom gave the chat himself
-      const keepTitle = pm.custom ? pm.title : title;
-      await env.BRIDGETTE_KV.put('chat:' + id, body, { metadata: { title: keepTitle, custom: !!pm.custom, updated: Date.now() } });
-      return json({ ok: true });
+      const r = await saveChatRecord(env, id, Array.isArray(b.messages) ? b.messages : [], b.title);
+      return json(r, r.error ? 400 : 200);
     }
     if (url.pathname.startsWith('/api/chats/')) {
       if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);

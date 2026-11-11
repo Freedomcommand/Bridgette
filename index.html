@@ -161,7 +161,12 @@ function renderPending() {
   });
 }
 function lightenMsg(m) {
-  if (Array.isArray(m.content)) return { role: m.role, content: m.content.map((p) => p && p.type === 'image_url' ? '[photo]' : (p && p.text) || '').filter(Boolean).join(' ') || '[photo]' };
+  // Photos saved as links stay in the chat; only raw photo data (not yet saved) is dropped.
+  if (Array.isArray(m.content)) {
+    const keep = m.content.filter((p) => p && ((p.type === 'text' && p.text) || (p.type === 'image_url' && p.image_url && /^https?:\/\//.test(p.image_url.url || ''))));
+    if (keep.some((p) => p.type === 'image_url')) return { role: m.role, content: keep };
+    return { role: m.role, content: m.content.map((p) => p && p.type === 'image_url' ? '[photo]' : (p && p.text) || '').filter(Boolean).join(' ') || '[photo]' };
+  }
   return m;
 }
 function saveLocal() { try { store.set('bridgette.history', history.map(lightenMsg)); } catch (e) {} }
@@ -189,7 +194,7 @@ if (!chatId) { chatId = newId(); store.set('bridgette.chatId', chatId); }
 function chatTitleOf(msgs) {
   const u = (msgs || []).find((m) => m.role === 'user');
   let t = u ? u.content : 'Chat';
-  if (Array.isArray(t)) t = '[photo]';
+  if (Array.isArray(t)) { const tx = t.filter((p) => p && p.type === 'text' && p.text).map((p) => p.text).join(' ').trim(); t = tx && tx !== 'Have a look at this.' ? tx : '[photo]'; }
   return String(t || 'Chat').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Chat';
 }
 // A copy of every chat is kept right on this device too, so History always works
@@ -278,6 +283,7 @@ function render() {
 function updateSpeakBtn() { $('speakToggle').textContent = speak ? '🔊 Voice on' : '🔈 Voice off'; }
 
 async function send(text) {
+  if (reading) await reading; // don't send before the photo is ready
   if (!text.trim() && !pending.length) return;
   await syncLatestChat(); // catch up first so this device never writes over newer messages
   let content = text;
@@ -294,29 +300,62 @@ async function send(text) {
   saveLocal();
   add('user', content);
   saveChat(); // show the question on his other devices right away
+  await askBridgette();
+}
+// If his phone drops the connection (screen off, switched apps), she keeps working and saves
+// her answer into the chat — so check the chat for it before calling it a failure.
+async function pickUpAnswer(tries) {
+  for (let i = 0; i < tries; i++) {
+    await new Promise((res) => setTimeout(res, i ? 5000 : 1500));
+    try {
+      const c = await fetch('/api/chats/' + encodeURIComponent(chatId), { headers: { 'x-bridgette-key': key } });
+      if (c.ok) {
+        const v = await c.json(); const ms = v.messages || [];
+        if (ms.length > history.length && ms[ms.length - 1].role === 'assistant') { history = ms; saveLocal(); render(); return ms[ms.length - 1].content; }
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+function showRetry(msg) {
+  const er = document.createElement('div'); er.className = 'err';
+  er.appendChild(document.createTextNode(msg + ' Your message and photo are kept. '));
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'btn'; b.textContent = '🔁 Try again';
+  b.onclick = () => { er.remove(); askBridgette(); };
+  er.appendChild(b); $('log').appendChild(er); $('log').scrollTop = $('log').scrollHeight;
+}
+async function askBridgette() {
   const t = document.createElement('div'); t.className = 'thinking'; t.textContent = 'Bridgette is working…';
   $('log').appendChild(t); $('log').scrollTop = $('log').scrollHeight;
   $('send').disabled = true;
   const ctl = new AbortController(); window._bridgetteCtl = ctl;
+  const sentLen = history.length;
   try {
     const r = await fetch('/api/chat', { method: 'POST', signal: ctl.signal, headers: { 'content-type': 'application/json', 'x-bridgette-key': key, 'x-laptop-code': laptopCode },
-      body: JSON.stringify({ messages: history, brainPref }) });
+      body: JSON.stringify({ messages: history, brainPref, chatId }) });
     const j = await r.json();
     t.remove();
-    if (r.status === 401) { showLogin(); history.pop(); return; }
-    if (j.error) { const e = document.createElement('div'); e.className = 'err'; e.textContent = j.error; $('log').appendChild(e); history.pop(); saveLocal(); return; }
+    if (r.status === 401) { showLogin(); return; }
+    // Swap in the saved copy of his message (photo as a link, so it stays in the chat)
+    if (j.userMsg && history[sentLen - 1] && history[sentLen - 1].role === 'user') { history[sentLen - 1] = j.userMsg; saveLocal(); }
+    if (j.error) { showRetry(j.error); return; }
     history.push({ role: 'assistant', content: j.reply });
     saveLocal();
+    render();
     const meta = document.createElement('div'); meta.className = 'meta';
     meta.textContent = 'brain: ' + j.brain + (j.steps && j.steps.length ? ' · used: ' + j.steps.map(s => s.tool).join(', ') : '');
-    add('assistant', j.reply, meta);
+    const last = $('log').lastElementChild; if (last) last.appendChild(meta);
     saveChat();
     if (speak) sayOutLoud(j.reply);
   } catch (e) {
     t.remove();
     if (ctl.signal.aborted) { const s2 = document.createElement('div'); s2.className = 'meta'; s2.textContent = 'Stopped.'; $('log').appendChild(s2); $('log').scrollTop = $('log').scrollHeight; saveLocal(); saveChat(); return; }
-    const er = document.createElement('div'); er.className = 'err'; er.textContent = 'Could not reach Bridgette: ' + e.message; $('log').appendChild(er);
-    history.pop(); saveLocal();
+    const w = document.createElement('div'); w.className = 'thinking'; w.textContent = 'Lost the connection — checking if Bridgette finished…';
+    $('log').appendChild(w); $('log').scrollTop = $('log').scrollHeight;
+    const got = await pickUpAnswer(6);
+    w.remove();
+    if (got != null) { if (speak) sayOutLoud(got); return; }
+    showRetry('Could not reach Bridgette (' + e.message + ').');
   } finally { $('send').disabled = false; if (window._bridgetteCtl === ctl) window._bridgetteCtl = null; }
 }
 // Stop button: cut her off — stops the job she's working on and stops her talking
@@ -430,17 +469,25 @@ document.addEventListener('click', (e) => { const m = $('attachMenu'); if (m && 
 $('amCamera').onclick = () => { $('attachMenu').style.display = 'none'; $('camera').click(); };
 $('amPhotos').onclick = () => { $('attachMenu').style.display = 'none'; $('photo').click(); };
 $('amFile').onclick = () => { $('attachMenu').style.display = 'none'; $('file').click(); };
-$('file').onchange = async (e) => {
-  for (const f of e.target.files) {
+let reading = null; // photos still being prepared — Send waits for them
+$('file').onchange = (e) => { const files = [...e.target.files]; e.target.value = ''; reading = addFiles(files).finally(() => { reading = null; }); };
+async function addFiles(files) {
+  const note = document.createElement('span'); note.className = 'chip'; note.textContent = 'Adding photo…'; $('pending').appendChild(note);
+  for (const f of files) {
     try {
-      if (f.type && f.type.indexOf('image/') === 0) { pending.push({ kind: 'image', url: await fileToDataURL(f), name: f.name }); }
+      const isImg = (f.type && f.type.indexOf('image/') === 0) || /\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(f.name || '');
+      if (isImg) {
+        const url = await fileToDataURL(f);
+        if (/^data:image\/(jpeg|png|webp);base64,/.test(url)) pending.push({ kind: 'image', url, name: f.name || 'photo.jpg' });
+        else alert("That photo's format couldn't be opened on this device. Take a screenshot of it and send the screenshot instead.");
+      }
       else if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') { pending.push({ kind: 'text', name: f.name, content: (await pdfText(f)).slice(0, 60000) }); }
       else if (/\.docx$/i.test(f.name)) { pending.push({ kind: 'text', name: f.name, content: (await docxText(f)).slice(0, 60000) }); }
       else { const t = await f.text(); pending.push({ kind: 'text', name: f.name, content: t.slice(0, 20000) }); }
     } catch (err) {}
   }
-  renderPending(); e.target.value = '';
-};
+  renderPending();
+}
 // Direct photo button: filters to pictures (opens the gallery straight away on a tablet/phone).
 $('photoBtn').onclick = () => $('photo').click();
 $('photo').onchange = $('file').onchange;
