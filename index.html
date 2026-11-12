@@ -59,6 +59,15 @@
   #avatarWrap.hidden { display:none; }
   #avatar { width:100%; height:100%; display:block; }
   @media (max-height:700px){ #avatarWrap { height:170px; } }
+  .msg img.photo { cursor:zoom-in; }
+  .zoomhint { display:inline-block; margin-top:4px; font-size:14px; color:var(--muted); }
+  #zoomer { position:fixed; inset:0; background:#000; display:none; flex-direction:column; z-index:50; }
+  #zmStage { flex:1; position:relative; overflow:hidden; touch-action:none; display:flex; align-items:center; justify-content:center; }
+  #zmImg { max-width:100%; max-height:100%; transform-origin:center center; user-select:none; -webkit-user-drag:none; will-change:transform; }
+  #zmBar { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; padding:12px; background:#111; }
+  #zmBar button, #zmBar a { font-family:inherit; min-width:72px; min-height:64px; font-size:30px; font-weight:bold; border:0; border-radius:12px; background:#2b4866; color:#fff; cursor:pointer; text-decoration:none; display:flex; align-items:center; justify-content:center; padding:0 14px; }
+  #zmBar #zmClose { background:#8a2a2a; }
+  #zmLevel { position:absolute; top:12px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.6); color:#fff; font-size:22px; font-weight:bold; padding:6px 14px; border-radius:10px; pointer-events:none; }
 </style>
 </head>
 <body>
@@ -173,14 +182,14 @@ function saveLocal() { try { store.set('bridgette.history', history.map(lightenM
 function contentToHtml(content) {
   if (typeof content === 'string') {
     let html = linkify(content);
-    for (const u of (content.match(/https?:\/\/[^\s)\]]+\.(?:png|jpg|jpeg|webp)/gi) || [])) html += '<img class="photo" src="' + u + '">';
+    for (const u of (content.match(/https?:\/\/[^\s)\]]+\.(?:png|jpg|jpeg|webp)/gi) || [])) html += '<img class="photo" src="' + u + '"><span class="zoomhint">🔍 Tap picture to zoom</span>';
     return html;
   }
   if (Array.isArray(content)) {
     let html = '';
     for (const p of content) {
       if (p && p.type === 'text' && p.text) html += linkify(p.text);
-      else if (p && p.type === 'image_url' && p.image_url) html += '<img class="photo" src="' + p.image_url.url + '">';
+      else if (p && p.type === 'image_url' && p.image_url) html += '<img class="photo" src="' + p.image_url.url + '"><span class="zoomhint">🔍 Tap picture to zoom</span>';
     }
     return html || '[photo]';
   }
@@ -753,6 +762,95 @@ setInterval(() => { if (document.visibilityState === 'visible') syncLatestChat()
     if (wrap) wrap.classList.add('hidden');
     window.bridgetteAvatar = { startTalking:function(){}, stopTalking:function(){}, show:function(){}, hide:function(){} };
   }
+})();
+</script>
+<div id="zoomer">
+  <div id="zmStage"><img id="zmImg" alt="Picture"><div id="zmLevel">100%</div></div>
+  <div id="zmBar">
+    <button id="zmOut" title="Zoom out">−</button>
+    <button id="zmFit" title="Back to normal size" style="font-size:22px">Fit</button>
+    <button id="zmIn" title="Zoom in">+</button>
+    <a id="zmSave" download title="Save the picture" style="font-size:22px">⬇ Save</a>
+    <button id="zmClose" title="Close" style="font-size:22px">✕ Close</button>
+  </div>
+</div>
+<script>
+// Picture zoom: tap any picture (or a picture link) to open it full screen.
+// + and − buttons, pinch with two fingers, drag to move around, double-tap to zoom in/out.
+(function () {
+  var box = document.getElementById('zoomer'), stage = document.getElementById('zmStage'),
+      img = document.getElementById('zmImg'), lvl = document.getElementById('zmLevel');
+  var s = 1, tx = 0, ty = 0, MIN = 1, MAX = 10, open = false, lvlTimer;
+  function apply() {
+    if (s <= MIN) { s = MIN; tx = 0; ty = 0; }
+    img.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + s + ')';
+    lvl.textContent = Math.round(s * 100) + '%'; lvl.style.display = 'block';
+    clearTimeout(lvlTimer); lvlTimer = setTimeout(function () { lvl.style.display = 'none'; }, 1500);
+  }
+  function center() { var r = stage.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+  // Zoom keeping the spot under (px,py) in place
+  function zoomAt(f, px, py) {
+    var c = center(); if (px == null) { px = c.x; py = c.y; }
+    var ns = Math.min(MAX, Math.max(MIN, s * f)); var k = ns / s;
+    var ox = px - c.x, oy = py - c.y;
+    tx = ox - (ox - tx) * k; ty = oy - (oy - ty) * k; s = ns; apply();
+  }
+  function show(src) {
+    img.src = src; document.getElementById('zmSave').href = src;
+    s = 1; tx = 0; ty = 0; apply(); box.style.display = 'flex'; open = true;
+    try { window.history.pushState({ zoom: 1 }, ''); } catch (e) {}
+  }
+  function hide(fromBack) {
+    if (!open) return; open = false; box.style.display = 'none'; img.src = '';
+    if (!fromBack) { try { if (window.history.state && window.history.state.zoom) window.history.back(); } catch (e) {} }
+  }
+  window.bridgetteZoom = show;
+  window.addEventListener('popstate', function () { hide(true); });
+  document.addEventListener('keydown', function (e) {
+    if (!open) return;
+    if (e.key === 'Escape') hide(); else if (e.key === '+' || e.key === '=') zoomAt(1.5); else if (e.key === '-') zoomAt(1 / 1.5);
+  });
+  document.getElementById('zmIn').onclick = function () { zoomAt(1.5); };
+  document.getElementById('zmOut').onclick = function () { zoomAt(1 / 1.5); };
+  document.getElementById('zmFit').onclick = function () { s = 1; apply(); };
+  document.getElementById('zmClose').onclick = function () { hide(); };
+  var isPic = /\.(png|jpe?g|webp|gif)(\?|#|$)/i;
+  document.addEventListener('click', function (e) {
+    var t = e.target; if (!t || !t.closest || box.contains(t)) return;
+    var im = t.closest('img.photo'); if (im) { e.preventDefault(); show(im.src); return; }
+    var a = t.closest('#log a'); if (a && isPic.test(a.href)) { e.preventDefault(); show(a.href); }
+  });
+  // Mouse wheel (computer)
+  stage.addEventListener('wheel', function (e) { e.preventDefault(); zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX, e.clientY); }, { passive: false });
+  // Fingers: one finger drags, two fingers pinch, double-tap toggles zoom
+  var pts = {}, last = null, pinch = null, lastTap = 0;
+  function list() { return Object.keys(pts).map(function (k) { return pts[k]; }); }
+  stage.addEventListener('pointerdown', function (e) {
+    stage.setPointerCapture && stage.setPointerCapture(e.pointerId);
+    pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var p = list();
+    if (p.length === 2) { pinch = { d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) }; last = null; }
+    else if (p.length === 1) {
+      last = { x: e.clientX, y: e.clientY };
+      var now = Date.now();
+      if (now - lastTap < 300) { if (s > 1.05) { s = 1; apply(); } else zoomAt(2.5, e.clientX, e.clientY); lastTap = 0; }
+      else lastTap = now;
+    }
+  });
+  stage.addEventListener('pointermove', function (e) {
+    if (!pts[e.pointerId]) return;
+    pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var p = list();
+    if (p.length >= 2 && pinch) {
+      var d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+      if (pinch.d > 0) zoomAt(d / pinch.d, (p[0].x + p[1].x) / 2, (p[0].y + p[1].y) / 2);
+      pinch.d = d;
+    } else if (p.length === 1 && last && s > 1) {
+      tx += e.clientX - last.x; ty += e.clientY - last.y; last = { x: e.clientX, y: e.clientY }; apply();
+    }
+  });
+  function up(e) { delete pts[e.pointerId]; var p = list(); if (p.length < 2) pinch = null; last = p.length === 1 ? { x: p[0].x, y: p[0].y } : null; }
+  stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
 })();
 </script>
 </body>
