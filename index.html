@@ -79,6 +79,7 @@
     <button id="gmailBtn" title="Connect Gmail">✉️ Gmail</button>
     <button id="speakToggle" title="Read answers out loud">🔈 Voice off</button>
     <button id="repeatBtn" title="Say the last answer again">🔁 Repeat</button>
+    <button id="copyBtn" title="Copy her last answer">📋 Copy</button>
     <button id="faceToggle" title="Show or hide Bridgette's face">👩 Face</button>
     <button id="photoBtn" title="Send a photo straight from your pictures">📷 Photo</button>
     <button id="brainBtn" title="Switch which AI she uses">🧠 AIs</button>
@@ -443,6 +444,19 @@ gmailStatus();
 $('repeatBtn').onclick = () => {
   const last = [...history].reverse().find((m) => m.role === 'assistant' && typeof m.content === 'string');
   sayOutLoud(last ? last.content : "Hi Freedom. I'm Bridgette. What are we doing today?");
+};
+$('copyBtn').onclick = async () => {
+  const last = [...history].reverse().find((m) => m.role === 'assistant' && typeof m.content === 'string' && m.content.trim());
+  const btn = $('copyBtn');
+  if (!last) { btn.textContent = '📋 Nothing yet'; setTimeout(() => { btn.textContent = '📋 Copy'; }, 1500); return; }
+  const text = last.content;
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch (e) {
+    try { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); ok = document.execCommand('copy'); ta.remove(); } catch (e2) {}
+  }
+  btn.textContent = ok ? '✅ Copied' : '❌ Could not copy';
+  setTimeout(() => { btn.textContent = '📋 Copy'; }, 1500);
 };
 $('speakToggle').onclick = () => { speak = !speak; store.set('bridgette.speak', speak); updateSpeakBtn(); if (!speak && 'speechSynthesis' in window) { speechSynthesis.cancel(); try { window.bridgetteAvatar && window.bridgetteAvatar.stopTalking(); } catch (e) {} } };
 // Read PDFs and Word files right on this device (the readers load only when needed).
