@@ -10,4 +10,7 @@ Freedom's personal AI, live at https://bridgette.pages.dev
   runs the job, and posts the answer back (/api/laptop/result); every call carries the secret
   key in `%USERPROFILE%\BridgetteLink\key.txt`. Setup prints a laptop code; each device must enter
   it once with the 💻 Laptop button before Bridgette will touch the laptop.
+- `/mcp/<key>` — the All-in-One Tool Library: her tools, main prompt and skills as one MCP connector for any AI
+  (Claude, AnythingLLM, Elain...). Get or change the link with the 🔌 MCP button. Computer tools stay off
+  until turned on there (needs the laptop code).
 - Saving to `main` deploys automatically (see `.github/workflows/deploy.yml`).
