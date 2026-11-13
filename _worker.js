@@ -1452,6 +1452,8 @@ export default {
     const origin = url.origin;
 
     // ----- All-in-One Tool Library (MCP) -----
+    // AI apps look here for sign-in settings; answer plainly that there are none (otherwise they get the app page and give up).
+    if (url.pathname.startsWith('/.well-known/')) return json({ error: 'not found' }, 404);
     if (url.pathname.startsWith('/mcp/')) return await serveMcp(req, env, url);
     if (url.pathname === '/api/mcp') {
       if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
