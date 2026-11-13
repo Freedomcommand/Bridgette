@@ -1,3 +1,4 @@
+import { connect } from 'cloudflare:sockets';
 // Bridgette — Freedom's personal AI in the cloud.
 // One Cloudflare Worker: serves the app (icon/installable) and runs the thinking loop.
 // Several free brains are chained: if one is out of free uses or down, she moves to the next.
@@ -762,7 +763,7 @@ async function donationTool(a, env) {
 
 // ---------- Gmail ----------
 const GMAIL_SCOPES = 'https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.settings.basic';
-const GMAIL_NOT_CONNECTED = "Gmail isn't connected yet. Tell Freedom: tap the ✉️ Gmail button at the top of Bridgette and sign in with Google.";
+const GMAIL_NOT_CONNECTED = "Gmail isn't connected yet. Tell Freedom: tap the ✉️ Gmail button at the top of Bridgette and paste his Google app password.";
 async function gmailToken(env) {
   const t = await env.BRIDGETTE_KV.get('gmail:token', 'json');
   if (!t || !t.refresh_token) return null;
@@ -799,8 +800,69 @@ function rawEmail(to, subject, body) {
   const subj = /^[\x00-\x7F]*$/.test(subject) ? subject : '=?UTF-8?B?' + btoa(unescape(encodeURIComponent(subject))) + '?=';
   return b64urlEncode([to ? 'To: ' + to : '', 'Subject: ' + subj, 'Content-Type: text/plain; charset="UTF-8"', '', body].filter((l, i) => l !== '' || i >= 3).join('\r\n'));
 }
+// ---------- Gmail by app password (simple hookup: one 16-letter Google app password, no Google project) ----------
+const GMAIL_ADDR = 'arthurfreedombates2026@gmail.com';
+async function gmailAppPw(env) {
+  const v = env.BRIDGETTE_KV && await env.BRIDGETTE_KV.get('gmail:apppw');
+  return v || env.GMAIL_APP_PASSWORD || '';
+}
+function b64utf8(str) { return btoa(unescape(encodeURIComponent(str))); }
+function smtpMessage(from, to, subject, body) {
+  const subj = /^[\x00-\x7F]*$/.test(subject) ? subject : '=?UTF-8?B?' + b64utf8(subject) + '?=';
+  const b = b64utf8(body || '').replace(/.{1,76}/g, '$&\r\n');
+  return ['From: Freedom <' + from + '>', 'To: ' + to, 'Subject: ' + subj, 'Date: ' + new Date().toUTCString(),
+    'Message-ID: <' + crypto.randomUUID() + '@bridgette.pages.dev>', 'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset="UTF-8"', 'Content-Transfer-Encoding: base64', '', b].join('\r\n');
+}
+async function smtpSend(env, to, subject, body, opener = connect) {
+  const pw = (await gmailAppPw(env)).replace(/\s+/g, '');
+  if (!pw) throw new Error(GMAIL_NOT_CONNECTED);
+  const rcpts = String(to || '').split(/[,;]/).map((x) => (x.match(/<([^>]+)>/) || [, x])[1].trim()).filter(Boolean);
+  if (!rcpts.length) throw new Error('No email address to send to.');
+  const sock = opener({ hostname: 'smtp.gmail.com', port: 465 }, { secureTransport: 'on' });
+  const w = sock.writable.getWriter(), rd = sock.readable.getReader(), dec = new TextDecoder(), enc = new TextEncoder();
+  let buf = '';
+  const reply = async () => {
+    for (;;) {
+      const lines = buf.split('\r\n');
+      for (let i = 0; i < lines.length - 1; i++) {
+        if (/^\d{3} /.test(lines[i])) { buf = lines.slice(i + 1).join('\r\n'); return { code: +lines[i].slice(0, 3), text: lines.slice(0, i + 1).join(' ') }; }
+      }
+      const { value, done } = await rd.read();
+      if (done) throw new Error('Gmail closed the connection.');
+      buf += dec.decode(value, { stream: true });
+    }
+  };
+  const cmd = async (line, ok) => {
+    if (line !== null) await w.write(enc.encode(line + '\r\n'));
+    const r = await reply();
+    if (!ok.includes(r.code)) {
+      if (r.code === 535 || r.code === 534) throw new Error("Gmail didn't accept the app password. Tell Freedom to tap ✉️ Gmail and paste a new one.");
+      throw new Error('Gmail said: ' + r.text.slice(0, 200));
+    }
+    return r;
+  };
+  try {
+    await cmd(null, [220]);
+    await cmd('EHLO bridgette.pages.dev', [250]);
+    await cmd('AUTH PLAIN ' + btoa('\0' + GMAIL_ADDR + '\0' + pw), [235]);
+    await cmd('MAIL FROM:<' + GMAIL_ADDR + '>', [250]);
+    for (const r of rcpts) await cmd('RCPT TO:<' + r + '>', [250, 251]);
+    await cmd('DATA', [354]);
+    const msg = smtpMessage(GMAIL_ADDR, rcpts.join(', '), subject || '', body || '').replace(/\r\n\./g, '\r\n..');
+    await cmd(msg + '\r\n.', [250]);
+    try { await w.write(enc.encode('QUIT\r\n')); } catch (e) {}
+  } finally { try { await sock.close(); } catch (e) {} }
+  return { sent: true, to: rcpts.join(', ') };
+}
+
 async function gmailTool(name, a, env) {
-  if (!env.GMAIL_CLIENT_ID) return { error: "Gmail isn't set up on Bridgette's server yet (needs the Google keys). Tell Freedom to ask Claude to finish the Gmail setup." };
+  const hasOAuth = env.GMAIL_CLIENT_ID && env.BRIDGETTE_KV && (await env.BRIDGETTE_KV.get('gmail:token'));
+  if (!hasOAuth) {
+    if (!(await gmailAppPw(env))) return { error: GMAIL_NOT_CONNECTED };
+    if (name === 'gmail_send') { try { return await smtpSend(env, a.to, a.subject, a.body); } catch (e) { return { error: e.message }; } }
+    return { error: 'Right now Bridgette is hooked to Gmail for SENDING only. Reading, drafts and clean-up are not hooked up yet — tell Freedom that plainly.' };
+  }
   switch (name) {
     case 'gmail_search': {
       const max = Math.min(Math.max(parseInt(a.max) || 10, 1), 50);
@@ -1252,7 +1314,18 @@ export default {
     if (url.pathname === '/api/gmail/status') {
       if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
       const t = env.BRIDGETTE_KV && await env.BRIDGETTE_KV.get('gmail:token', 'json');
-      return json({ setup: !!env.GMAIL_CLIENT_ID, connected: !!(t && t.refresh_token) });
+      const pw = await gmailAppPw(env);
+      return json({ setup: !!env.GMAIL_CLIENT_ID, connected: !!(t && t.refresh_token) || !!pw, apppw: !!pw });
+    }
+    if (url.pathname === '/api/gmail/apppw' && req.method === 'POST') {
+      if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);
+      const { password } = await req.json().catch(() => ({}));
+      const pw = String(password || '').replace(/\s+/g, '');
+      if (!/^[a-zA-Z]{16}$/.test(pw)) return json({ error: 'That does not look like a Google app password (16 letters).' }, 400);
+      await env.BRIDGETTE_KV.put('gmail:apppw', pw);
+      try { await smtpSend(env, GMAIL_ADDR, 'Bridgette is hooked up to your Gmail', 'This is Bridgette. I can send email from your Gmail now.'); }
+      catch (e) { await env.BRIDGETTE_KV.delete('gmail:apppw'); return json({ error: e.message }, 400); }
+      return json({ ok: true });
     }
     if (url.pathname === '/api/gmail/start') {
       if (!authorized(req, env)) return json({ error: 'Wrong passphrase.' }, 401);

@@ -435,6 +435,17 @@ async function checkGrantsDue() {
 }
 checkGrantsDue(); setInterval(checkGrantsDue, 30 * 60 * 1000);
   if (st.connected && !confirm('Gmail is already connected. Connect again?')) return;
+  if (!st.setup) {
+    const pw = prompt('Paste your Google app password (the 16 letters):');
+    if (!pw) return;
+    $('gmailBtn').textContent = '✉️ Checking…';
+    try {
+      const r = await fetch('/api/gmail/apppw', { method: 'POST', headers: { 'content-type': 'application/json', 'x-bridgette-key': key }, body: JSON.stringify({ password: pw }) });
+      const j = await r.json();
+      alert(j.ok ? '✅ Gmail is connected. Bridgette just sent you a test email.' : (j.error || 'That did not work.'));
+    } catch (e) { alert('Could not reach Bridgette.'); }
+    gmailStatus(); return;
+  }
   try {
     const r = await fetch('/api/gmail/start', { headers: { 'x-bridgette-key': key } }); const j = await r.json();
     if (j.url) location.href = j.url; else alert(j.error || 'Could not start Gmail sign-in.');
